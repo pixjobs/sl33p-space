@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}sl33p-space - Dashboard{% endblock %}
+{% block content %}
+<section class="card now-playing" id="now-playing">
+  <h2>Now Playing</h2>
+  <div class="status" id="status-display">
+    {% if state.is_playing %}
+    <div class="status-active">
+      <span class="pulse"></span>
+      <span>{{ state.filepath | basename }}</span>
+    </div>
+    {% else %}
+    <div class="status-idle">Nothing playing</div>
+    {% endif %}
+  </div>
+  <div class="controls">
+    <button class="btn btn-stop" onclick="stopPlayback()">Stop</button>
+    <div class="volume-control">
+      <label>Volume: <span id="vol-display">{{ state.volume }}</span>%</label>
+      <input type="range" id="volume-slider" min="0" max="80" value="{{ state.volume }}"
+             oninput="setVolume(this.value)">
+    </div>
+    <button class="btn btn-fade" onclick="fadeOut()">Fade Out (15min)</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Quick Play</h2>
+  <div class="sound-grid">
+    {% for type_key, type_desc in sound_types.items() %}
+    <button class="sound-btn" onclick="quickPlay('{{ type_key }}')" title="{{ type_desc }}">
+      <span class="sound-icon">{{ type_key | sound_icon }}</span>
+      <span class="sound-name">{{ type_key | replace('_', ' ') | title }}</span>
+    </button>
+    {% endfor %}
+  </div>
+</section>
+
+{% if routines %}
+<section class="card">
+  <h2>Tonight's Schedule</h2>
+  <div class="routine-list">
+    {% for r in routines %}
+    <div class="routine-item">
+      <span class="routine-time">{{ r.start_time }}</span>
+      <span class="routine-sound">{{ r.sound_type | replace('_', ' ') | title }}</span>
+      <span class="routine-profile">{{ r.profile_name }}</span>
+      <span class="routine-duration">{{ r.duration_minutes }}min</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if profiles %}
+<section class="card">
+  <h2>Family</h2>
+  <div class="profile-chips">
+    {% for name, p in profiles.items() %}
+    <a href="/kid/{{ name }}" class="profile-chip" style="text-decoration:none;color:inherit">
+      <span class="profile-name">{{ name }}</span>
+      <span class="profile-bedtime">{{ p.bedtime }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

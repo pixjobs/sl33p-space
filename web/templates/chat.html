@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}sl33p-space - Chat{% endblock %}
+{% block content %}
+<section class="card chat-container">
+  <h2>Sleep Assistant</h2>
+  <div class="chat-messages" id="chat-messages">
+    <div class="msg msg-agent">
+      Hi! I'm your sleep assistant. Try asking me things like:
+      <ul>
+        <li>"Play brown noise for 30 minutes"</li>
+        <li>"Set up a bedtime routine for Lily at 8pm"</li>
+        <li>"What sounds are available?"</li>
+        <li>"Fade out the current sound over 15 minutes"</li>
+      </ul>
+    </div>
+  </div>
+  <form class="chat-input" onsubmit="sendChat(event)">
+    <input type="text" id="chat-input" placeholder="Ask your sleep assistant..." autocomplete="off">
+    <button type="submit" class="btn btn-primary">Send</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,28 @@
+{
+  "audio": {
+    "max_volume": 80,
+    "default_volume": 40,
+    "fade_duration_minutes": 15,
+    "sounds_dir": "data/sounds",
+    "playback_backend": "auto"
+  },
+  "web": {
+    "host": "0.0.0.0",
+    "port": 8090
+  },
+  "agent": {
+    "model": "gemini-2.5-flash",
+    "api_key_env": "GOOGLE_API_KEY"
+  },
+  "mcp": {
+    "servers": [
+      {
+        "name": "sleep_tracker",
+        "type": "stdio",
+        "command": "python3",
+        "args": ["mcp_servers/sleep_tracker.py"],
+        "enabled": true
+      }
+    ]
+  }
+}
