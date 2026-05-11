@@ -3,5 +3,4 @@ python-dotenv>=1.0
 google-adk>=1.0.0
 google-genai>=1.0.0
 mcp>=1.0.0
-requests>=2.31
 pydub>=0.25

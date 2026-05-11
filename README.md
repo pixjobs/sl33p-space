@@ -1,60 +1,77 @@
 # sl33p-space
 
-Sleep optimization assistant for families. Runs on Raspberry Pi as a bedroom audio server with a web interface for parents.
+Your AI sleep coach. Tell it once how you want to sleep — it handles the rest every night.
 
-Built with [Google ADK](https://github.com/google/adk-python) + Gemini for the [Google Cloud Rapid Agent Hackathon](https://devpost.com/).
+Built with [Google ADK](https://github.com/google/adk-python) + Gemini + Lyria for the [Google Cloud Rapid Agent Hackathon](https://rapid-agent.devpost.com/) (MongoDB track).
 
 ## What it does
 
-- **Plays sleep sounds** on a Pi speaker: brown noise, pink noise, rain, ocean waves, binaural beats, lullaby drones
-- **Gemini-powered agent** understands natural language: "Play rain sounds for Lily, fade out in 30 minutes"
-- **Bedtime schedules** that trigger automatically each night with fade-out
-- **Family profiles** with per-child volume limits and sound preferences
-- **Web UI** accessible from any phone on the local network
-
-## Quick start
-
-```bash
-pip install -r requirements.txt
-python run.py
-# Open http://localhost:8080
-```
-
-For Gemini agent support:
-```bash
-export GOOGLE_API_KEY=your-key-here
-python run.py
-```
+- **AI-generated sleep music** — Describe what you want ("warm piano with rain textures"), Lyria generates a unique track. Cached and shared across users.
+- **Bedtime automation** — Configure your routine once via natural language. The agent plays your preferred music, fades out, and logs the session. No conversation needed at bedtime.
+- **Learns from history** — Tracks what you played, when, and how long. The agent recommends what works best for you based on completion rates and patterns.
+- **Shared music library** — Every generated track is stored in MongoDB and available to all users. Community tracks with high completion rates surface first.
 
 ## Architecture
 
 ```
-sl33p-space/
-├── agent/          # Google ADK agent (Gemini + tools)
-├── audio/          # Sound generator, player, scheduler, library
-├── web/            # Flask web interface
-├── config/         # Configuration
-└── run.py          # Entry point
+Browser
+  │
+  ├── Chat UI ──► Google ADK Agent (Gemini)
+  │                  │
+  │                  ├── MongoDB MCP Server ──► MongoDB Atlas
+  │                  │     • music_library (shared tracks)
+  │                  │     • users (profiles + credits)
+  │                  │     • sleep_sessions (playback history)
+  │                  │     • routines (nightly schedules)
+  │                  │
+  │                  ├── Lyria (google.genai)
+  │                  │     • AI music generation
+  │                  │
+  │                  └── Playback Tools
+  │                        • Schedule, play, fade, stop
+  │
+  ├── Browser Audio Player (HTML5 <audio>)
+  │
+  └── Scheduler (autonomous nightly routines)
 ```
 
-The **agent** interprets natural language and calls tools. The **audio engine** generates and plays sounds. The **web interface** provides a dashboard, chat panel, profile management, and schedule management. Everything connects through `run.py`.
-
-## Raspberry Pi setup
+## Quick start
 
 ```bash
-# On your Pi:
+# Clone and install
 git clone https://github.com/yourname/sl33p-space.git
 cd sl33p-space
 pip install -r requirements.txt
+
+# Set environment variables
+export GOOGLE_API_KEY=your-gemini-api-key
+export MONGODB_URI=mongodb+srv://...
+
+# Run
 python run.py
-# Access from phone: http://<pi-ip>:8080
+# Open http://localhost:8090
 ```
 
-Requires: Python 3.10+, one of `aplay`/`mpg123`/`ffplay` for audio playback.
+## Environment variables
 
-## MCP partner integration
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GOOGLE_API_KEY` | Yes | Gemini API key for agent + Lyria music generation |
+| `MONGODB_URI` | Yes | MongoDB Atlas connection string |
+| `MONGODB_DATABASE` | No | Database name (default: `sl33p-space`) |
 
-The agent architecture supports MCP partners via ADK's `McpToolset`. Partner integration will be added when hackathon partners are announced.
+## Cloud Run deployment
+
+```bash
+gcloud run deploy sl33p-space \
+  --source . \
+  --set-env-vars GOOGLE_API_KEY=$GOOGLE_API_KEY,MONGODB_URI=$MONGODB_URI \
+  --allow-unauthenticated
+```
+
+## Hackathon track
+
+**MongoDB** — See [HACKATHON.md](HACKATHON.md) for submission details, judging criteria mapping, and architecture notes.
 
 ## License
 

@@ -4,8 +4,8 @@
 
 <!-- ───── Profiles ───── -->
 <section class="card">
-  <h2>Family Sleep Profiles</h2>
-  <p class="section-hint" style="margin-bottom:1rem">Set preferred sounds, bedtimes, and volume limits for each family member.</p>
+  <h2>Sleep Profiles</h2>
+  <p class="section-hint" style="margin-bottom:1rem">Set preferred sounds, bedtimes, and volume limits for each profile.</p>
 
   {% if profiles %}
   <div class="profiles-list">
@@ -14,7 +14,6 @@
       <div class="profile-header">
         <h3>{{ name }}</h3>
         <div>
-          <a href="/kid/{{ name }}" class="btn btn-sm btn-primary" title="Bookmark this for {{ name }}'s tablet">Kid View</a>
           <button class="btn btn-sm btn-danger" onclick="deleteProfile('{{ name }}')">Remove</button>
         </div>
       </div>
@@ -28,7 +27,7 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="empty">No profiles yet. Add one below to set up per-child bedtime routines.</p>
+  <p class="empty">No profiles yet. Add one below to set up a personalised bedtime routine.</p>
   {% endif %}
 
   <details class="add-form-toggle">
@@ -37,7 +36,7 @@
       <div class="form-row">
         <div class="form-group">
           <label for="p-name">Name</label>
-          <input type="text" id="p-name" required placeholder="e.g. Lily">
+          <input type="text" id="p-name" required placeholder="e.g. Yang">
         </div>
         <div class="form-group">
           <label for="p-bedtime">Bedtime</label>

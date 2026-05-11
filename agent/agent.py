@@ -10,7 +10,7 @@ import json
 import os
 from typing import Optional
 
-from agent.prompts import ROOT_PROMPT, BEDTIME_PROMPT
+from agent.prompts import ROOT_PROMPT, SLEEP_COACH_PROMPT
 
 _player = None
 _library = None
@@ -117,26 +117,6 @@ def generate_music_track(prompt: str, model: str = "lyria-3-clip-preview") -> di
     return generate_music(prompt, model=model)
 
 
-def generate_nasa_music() -> dict:
-    """Generate a unique sleep track inspired by today's NASA Astronomy Picture of the Day.
-
-    Uses NASA APOD data to create a prompt, then generates ambient music via Lyria.
-    The result is cached so repeated calls return the same track.
-    """
-    from audio.music_gen import generate_from_nasa_apod
-    return generate_from_nasa_apod()
-
-
-def play_generated_music(track_path: str, volume: Optional[int] = None) -> dict:
-    """Play a previously generated music track.
-
-    Args:
-        track_path: Path to the generated music file.
-        volume: Volume percentage (0-80).
-    """
-    return _player.play(track_path, volume=volume)
-
-
 def list_music_library() -> dict:
     """List all AI-generated music tracks in the cache."""
     from audio.music_gen import list_generated_music
@@ -238,16 +218,17 @@ def update_profile(name: str, bedtime: str = None, max_volume: int = None,
     return {"updated": name, "profile": profile}
 
 
-BEDTIME_TOOLS = [
-    get_profile, play_sound, fade_out, get_status,
+SLEEP_COACH_TOOLS = [
+    get_profile, update_profile, play_sound, fade_out, get_status,
     create_schedule, cancel_schedule, list_schedules,
+    generate_music_track, list_music_library,
 ]
 
 ROOT_TOOLS = [
     play_sound, stop_playback, set_volume, fade_out,
     list_sounds, generate_sound, get_status,
     update_profile,
-    generate_music_track, generate_nasa_music, play_generated_music, list_music_library,
+    generate_music_track, list_music_library,
 ]
 
 ALL_TOOLS = ROOT_TOOLS + [
@@ -275,13 +256,13 @@ def create_runner(config: dict = None):
     mcp_tools = load_mcp_tools(config or {})
     model = (config or {}).get("agent", {}).get("model", "gemini-flash-latest")
 
-    bedtime_agent = Agent(
-        name="bedtime_agent",
+    sleep_coach = Agent(
+        name="sleep_coach",
         model=model,
-        description="Handles bedtime routines: profile lookup, sound recommendation, "
-                    "playback, fade-out scheduling, and session logging.",
-        instruction=BEDTIME_PROMPT,
-        tools=BEDTIME_TOOLS + mcp_tools,
+        description="Handles bedtime setup: profile lookup, history-based recommendation, "
+                    "playback, fade-out scheduling, and routine creation.",
+        instruction=SLEEP_COACH_PROMPT,
+        tools=SLEEP_COACH_TOOLS + mcp_tools,
         disallow_transfer_to_parent=False,
     )
 
@@ -290,7 +271,7 @@ def create_runner(config: dict = None):
         model=model,
         instruction=ROOT_PROMPT,
         tools=ROOT_TOOLS,
-        sub_agents=[bedtime_agent],
+        sub_agents=[sleep_coach],
     )
     runner = InMemoryRunner(agent=_root_agent, app_name="sl33p-space")
     return runner

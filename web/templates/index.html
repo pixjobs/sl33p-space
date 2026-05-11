@@ -5,19 +5,19 @@
 <!-- ───── Hero ───── -->
 <section class="hero">
   <h1>sl33p-space</h1>
-  <p class="hero-subtitle">AI-generated sleep music, ambient soundscapes, and a bedtime assistant for your family.</p>
+  <p class="hero-subtitle">Your AI sleep coach. Personalised music, bedtime automation, and a routine that learns what works.</p>
   <div class="hero-steps">
     <div class="step">
       <span class="step-num">1</span>
-      <span>Generate a unique sleep track from a prompt or NASA's Astronomy Picture of the Day</span>
+      <span>Generate unique AI sleep music from a description</span>
     </div>
     <div class="step">
       <span class="step-num">2</span>
-      <span>Play it in the browser or on your bedroom speaker</span>
+      <span>Play it in your browser and let it fade you to sleep</span>
     </div>
     <div class="step">
       <span class="step-num">3</span>
-      <span>Set up bedtime schedules and fade-outs per family member</span>
+      <span>Set up a nightly routine that runs automatically</span>
     </div>
   </div>
 </section>
@@ -64,10 +64,6 @@
           <path d="M5 18l1.5-3M19 18l-1.5-3M12 22v-3"/>
         </svg>
         Inspire me
-      </button>
-      <button class="btn btn-ghost nasa-btn" onclick="generateNasa()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:15px;height:15px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
-        NASA APOD
       </button>
     </div>
 
@@ -169,9 +165,6 @@
         <button class="track-action-btn" onclick="suggestVariation(this.closest('.track-row').dataset.prompt)" title="Create variation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 2l1.09 3.26L16.18 6l-2.54 2.17L14.36 12 12 10.18 9.64 12l.72-3.83L7.82 6l3.09-.74z"/></svg>
         </button>
-        <button class="track-action-btn" onclick="playOnSpeaker('{{ track.path }}')" title="Play on speaker">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
-        </button>
         <button class="track-action-btn" onclick="archiveTrack('{{ track.id }}')" title="Archive">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
         </button>
@@ -226,7 +219,7 @@
   <div class="chat-inline">
     <div class="chat-messages" id="chat-messages">
       <div class="msg msg-agent">
-        Hi! I can play sounds, generate music, set up bedtime schedules, and answer sleep questions.
+        Hi! I'm your sleep coach. I can generate music, set up bedtime routines, and learn what helps you sleep best.
         {% if not has_agent %}(Running in fallback mode — set GOOGLE_API_KEY for full AI support.){% endif %}
       </div>
     </div>

@@ -4,7 +4,7 @@
     "default_volume": 40,
     "fade_duration_minutes": 15,
     "sounds_dir": "data/sounds",
-    "playback_backend": "auto"
+    "playback_backend": "browser"
   },
   "web": {
     "host": "0.0.0.0",
@@ -17,11 +17,11 @@
   "mcp": {
     "servers": [
       {
-        "name": "sleep_tracker",
+        "name": "mongodb",
         "type": "stdio",
-        "command": "python3",
-        "args": ["mcp_servers/sleep_tracker.py"],
-        "enabled": true
+        "command": "npx",
+        "args": ["-y", "@mongodb-js/mongodb-mcp-server", "--connectionString", "${MONGODB_URI}"],
+        "enabled": false
       }
     ]
   }

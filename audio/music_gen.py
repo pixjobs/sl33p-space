@@ -3,16 +3,12 @@ Lyria-powered sleep music generator.
 
 Generates ambient sleep tracks from text prompts using Google's Lyria 3 Clip model.
 Tracks are cached -- same prompt never generates twice.
-
-Uses NASA APOD data to create unique, data-driven ambient compositions.
 """
 
 import hashlib
 import json
 import os
-import requests
 import shutil
-from typing import Optional
 
 
 CACHE_DIR = "data/music"
@@ -169,66 +165,6 @@ def generate_music(prompt: str, title: str = "",
         return {"error": "google-genai package not installed"}
     except Exception as e:
         return {"error": str(e)}
-
-
-def generate_from_nasa_apod(date: Optional[str] = None) -> dict:
-    """Generate a unique sleep track inspired by today's NASA Astronomy Picture of the Day."""
-    try:
-        nasa_key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
-        params = {"api_key": nasa_key}
-        if date:
-            params["date"] = date
-        resp = requests.get("https://api.nasa.gov/planetary/apod", params=params, timeout=10)
-        data = resp.json()
-
-        title = data.get("title", "Deep Space")
-        explanation = data.get("explanation", "")
-
-        prompt = _apod_to_music_prompt(title, explanation)
-
-        result = generate_music(prompt, title=f"NASA: {title}")
-        result["nasa_title"] = title
-        result["nasa_date"] = data.get("date", "")
-        return result
-
-    except Exception as e:
-        return {"error": f"NASA API failed: {e}"}
-
-
-def _apod_to_music_prompt(title: str, explanation: str) -> str:
-    keywords = _extract_mood_keywords(explanation.lower())
-    return (
-        f"Ambient sleep music inspired by '{title}'. "
-        f"Mood: {', '.join(keywords)}. "
-        f"Create a dreamlike atmosphere that evokes the feeling of drifting through space. "
-        f"Use warm synthesizer pads, subtle harmonic movement, and gentle celestial textures."
-    )
-
-
-def _extract_mood_keywords(text: str) -> list[str]:
-    mood_map = {
-        "bright": "luminous, uplifting",
-        "dark": "deep, mysterious",
-        "nebula": "ethereal, misty",
-        "galaxy": "vast, expansive",
-        "star": "sparkling, warm",
-        "moon": "gentle, reflective",
-        "sun": "radiant, warm",
-        "planet": "orbiting, steady",
-        "comet": "flowing, transient",
-        "supernova": "powerful, fading",
-        "aurora": "shimmering, colorful",
-        "dust": "soft, diffuse",
-        "cluster": "layered, rich",
-        "void": "minimal, spacious",
-        "eclipse": "dramatic, transitional",
-        "ring": "circular, hypnotic",
-    }
-    found = []
-    for keyword, mood in mood_map.items():
-        if keyword in text:
-            found.append(mood)
-    return found[:4] or ["serene, cosmic"]
 
 
 def _track_entry(key: str, entry: dict) -> dict:

@@ -44,15 +44,6 @@ def create_app(player, library, scheduler, agent_runner=None):
             sound_types=_library.get_types(),
         )
 
-    @app.route("/kid/<name>")
-    def kid_view(name):
-        profiles = _load_profiles()
-        if name not in profiles:
-            return f"No profile for '{name}'. Create one at <a href='/settings'>/settings</a>.", 404
-        profile = profiles[name]
-        sounds = profile.get("preferred_sounds", list(_library.get_types().keys()))
-        return render_template("kid.html", profile=profile, sounds=sounds)
-
     @app.route("/media/music/<path:filename>")
     def serve_music(filename):
         music_dir = os.path.abspath("data/music")
@@ -170,26 +161,10 @@ def create_app(player, library, scheduler, agent_runner=None):
         model = data.get("model", "lyria-3-clip-preview")
         return jsonify(generate_music(prompt, title=title, model=model))
 
-    @app.route("/api/music/nasa", methods=["POST"])
-    def api_music_nasa():
-        from audio.music_gen import generate_from_nasa_apod
-        data = request.get_json(force=True)
-        date = data.get("date")
-        return jsonify(generate_from_nasa_apod(date))
-
     @app.route("/api/music/library")
     def api_music_library():
         from audio.music_gen import list_generated_music
         return jsonify(list_generated_music())
-
-    @app.route("/api/music/play", methods=["POST"])
-    def api_music_play():
-        data = request.get_json(force=True)
-        path = data.get("path", "")
-        volume = data.get("volume")
-        if not path or not os.path.exists(path):
-            return jsonify({"error": "Track not found"}), 404
-        return jsonify(_player.play(path, volume=volume))
 
     @app.route("/api/music/<track_id>", methods=["DELETE"])
     def api_music_delete(track_id):
