@@ -15,13 +15,15 @@ class PlaybackState:
 
 
 class AudioPlayer:
-    def __init__(self, max_volume: int = 80, default_volume: int = 40):
+    def __init__(self, max_volume: int = 80, default_volume: int = 40,
+                 on_stop_callback=None):
         self.max_volume = max_volume
         self._state = PlaybackState(volume=default_volume)
         self._process: subprocess.Popen | None = None
         self._fade_thread: threading.Thread | None = None
         self._fade_cancel = threading.Event()
         self._backend = self._detect_backend()
+        self._on_stop = on_stop_callback
 
     def _detect_backend(self) -> str | None:
         for cmd in ["aplay", "ffplay", "mpg123", "paplay"]:
@@ -34,6 +36,7 @@ class AudioPlayer:
         if self._process and self._process.poll() is not None:
             self._state.is_playing = False
             self._process = None
+            self._fire_stop_callback(completed=True)
         return self._state
 
     def play(self, filepath: str, volume: int | None = None) -> dict:
@@ -62,8 +65,9 @@ class AudioPlayer:
         self._state.started_at = time.time()
         return {"status": "playing", "file": filepath, "backend": self._backend}
 
-    def stop(self) -> dict:
+    def stop(self, _from_fade: bool = False) -> dict:
         self._fade_cancel.set()
+        was_playing = self._state.is_playing
         if self._process:
             self._process.terminate()
             try:
@@ -72,7 +76,10 @@ class AudioPlayer:
                 self._process.kill()
             self._process = None
         self._state.is_playing = False
+        filepath = self._state.filepath
         self._state.filepath = ""
+        if was_playing:
+            self._fire_stop_callback(completed=_from_fade, filepath=filepath)
         return {"status": "stopped"}
 
     def set_volume(self, level: int) -> dict:
@@ -98,7 +105,7 @@ class AudioPlayer:
                 time.sleep(step_time)
             self.set_volume(target)
             if target == 0:
-                self.stop()
+                self.stop(_from_fade=True)
 
         self._fade_thread = threading.Thread(target=_fade, daemon=True)
         self._fade_thread.start()
@@ -126,3 +133,19 @@ class AudioPlayer:
                 ["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{level}%"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
+
+    def _fire_stop_callback(self, completed: bool = False, filepath: str = None):
+        if not self._on_stop:
+            return
+        fp = filepath or self._state.filepath
+        duration = time.time() - self._state.started_at if self._state.started_at else 0
+        sound = os.path.basename(fp).replace(".wav", "").replace(".mp3", "") if fp else ""
+        try:
+            self._on_stop({
+                "sound": sound,
+                "filepath": fp,
+                "duration_seconds": round(duration),
+                "completed": completed,
+            })
+        except Exception:
+            pass

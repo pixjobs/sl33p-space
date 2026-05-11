@@ -10,7 +10,7 @@ import json
 import os
 from typing import Optional
 
-from agent.prompts import SYSTEM_PROMPT
+from agent.prompts import ROOT_PROMPT, BEDTIME_PROMPT
 
 _player = None
 _library = None
@@ -238,12 +238,21 @@ def update_profile(name: str, bedtime: str = None, max_volume: int = None,
     return {"updated": name, "profile": profile}
 
 
-ALL_TOOLS = [
+BEDTIME_TOOLS = [
+    get_profile, play_sound, fade_out, get_status,
+    create_schedule, cancel_schedule, list_schedules,
+]
+
+ROOT_TOOLS = [
     play_sound, stop_playback, set_volume, fade_out,
     list_sounds, generate_sound, get_status,
-    create_schedule, cancel_schedule, list_schedules,
-    get_profile, update_profile,
+    update_profile,
     generate_music_track, generate_nasa_music, play_generated_music, list_music_library,
+]
+
+ALL_TOOLS = ROOT_TOOLS + [
+    create_schedule, cancel_schedule, list_schedules,
+    get_profile,
 ]
 
 
@@ -264,12 +273,24 @@ def create_runner(config: dict = None):
 
     from agent.mcp_loader import load_mcp_tools
     mcp_tools = load_mcp_tools(config or {})
+    model = (config or {}).get("agent", {}).get("model", "gemini-flash-latest")
+
+    bedtime_agent = Agent(
+        name="bedtime_agent",
+        model=model,
+        description="Handles bedtime routines: profile lookup, sound recommendation, "
+                    "playback, fade-out scheduling, and session logging.",
+        instruction=BEDTIME_PROMPT,
+        tools=BEDTIME_TOOLS + mcp_tools,
+        disallow_transfer_to_parent=False,
+    )
 
     _root_agent = Agent(
         name="sl33p_space",
-        model="gemini-2.5-flash",
-        instruction=SYSTEM_PROMPT,
-        tools=ALL_TOOLS + mcp_tools,
+        model=model,
+        instruction=ROOT_PROMPT,
+        tools=ROOT_TOOLS,
+        sub_agents=[bedtime_agent],
     )
     runner = InMemoryRunner(agent=_root_agent, app_name="sl33p-space")
     return runner

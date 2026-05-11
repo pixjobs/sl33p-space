@@ -5,6 +5,11 @@ import json
 import os
 import sys
 
+from dotenv import load_dotenv
+
+load_dotenv(".env.local", override=True)
+load_dotenv(".env")
+
 
 def load_config():
     config_path = os.path.join("config", "config.json")
@@ -15,6 +20,30 @@ def load_config():
         "audio": {"max_volume": 80, "default_volume": 40, "sounds_dir": "data/sounds"},
         "web": {"host": "0.0.0.0", "port": 8080},
     }
+
+
+def _make_session_logger():
+    from datetime import datetime
+    log_path = os.path.join("data", "sleep_log.json")
+
+    def log_session(info: dict):
+        os.makedirs("data", exist_ok=True)
+        entries = []
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                entries = json.load(f)
+        entries.append({
+            "profile": "default",
+            "sound_type": info.get("sound", ""),
+            "duration_minutes": round(info.get("duration_seconds", 0) / 60, 1),
+            "completed": info.get("completed", False),
+            "notes": "",
+            "timestamp": datetime.now().isoformat(),
+        })
+        with open(log_path, "w") as f:
+            json.dump(entries, f, indent=2)
+
+    return log_session
 
 
 def main():
@@ -29,6 +58,7 @@ def main():
     player = AudioPlayer(
         max_volume=audio_cfg.get("max_volume", 80),
         default_volume=audio_cfg.get("default_volume", 40),
+        on_stop_callback=_make_session_logger(),
     )
     library = SoundLibrary(sounds_dir=audio_cfg.get("sounds_dir", "data/sounds"))
     scheduler = Scheduler(player, library)

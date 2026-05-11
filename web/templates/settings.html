@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}sl33p-space - Settings{% endblock %}
+{% block content %}
+
+<!-- ───── Profiles ───── -->
+<section class="card">
+  <h2>Family Sleep Profiles</h2>
+  <p class="section-hint" style="margin-bottom:1rem">Set preferred sounds, bedtimes, and volume limits for each family member.</p>
+
+  {% if profiles %}
+  <div class="profiles-list">
+    {% for name, p in profiles.items() %}
+    <div class="profile-card" id="profile-{{ name }}">
+      <div class="profile-header">
+        <h3>{{ name }}</h3>
+        <div>
+          <a href="/kid/{{ name }}" class="btn btn-sm btn-primary" title="Bookmark this for {{ name }}'s tablet">Kid View</a>
+          <button class="btn btn-sm btn-danger" onclick="deleteProfile('{{ name }}')">Remove</button>
+        </div>
+      </div>
+      <div class="profile-details">
+        <div><strong>Bedtime:</strong> {{ p.bedtime }}</div>
+        <div><strong>Max Volume:</strong> {{ p.max_volume }}%</div>
+        <div><strong>Fade:</strong> {{ p.fade_minutes }} minutes</div>
+        <div><strong>Sounds:</strong> {{ p.preferred_sounds | join(', ') | replace('_', ' ') }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No profiles yet. Add one below to set up per-child bedtime routines.</p>
+  {% endif %}
+
+  <details class="add-form-toggle">
+    <summary class="btn btn-ghost" style="margin-top:0.75rem">Add Profile</summary>
+    <form class="form" onsubmit="createProfile(event)" style="margin-top:1rem">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="p-name">Name</label>
+          <input type="text" id="p-name" required placeholder="e.g. Lily">
+        </div>
+        <div class="form-group">
+          <label for="p-bedtime">Bedtime</label>
+          <input type="time" id="p-bedtime" value="20:00">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="p-volume">Max Volume (%)</label>
+          <input type="number" id="p-volume" min="10" max="80" value="50">
+        </div>
+        <div class="form-group">
+          <label for="p-fade">Fade Out (minutes)</label>
+          <input type="number" id="p-fade" min="0" max="60" value="15">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">Save Profile</button>
+    </form>
+  </details>
+</section>
+
+<!-- ───── Schedules ───── -->
+<section class="card">
+  <h2>Bedtime Schedules</h2>
+
+  {% if routines %}
+  <div class="routine-list" id="routine-list">
+    {% for r in routines %}
+    <div class="routine-item">
+      <div class="routine-main">
+        <span class="routine-time">{{ r.start_time }}</span>
+        <span class="routine-sound">{{ r.sound_type | replace('_', ' ') | title }}</span>
+        <span class="routine-profile">{{ r.profile_name }}</span>
+      </div>
+      <div class="routine-meta">
+        <span>{{ r.duration_minutes }}min</span>
+        <span>fade {{ r.fade_out_minutes }}min</span>
+        <span>vol {{ r.volume }}%</span>
+        {% if r.recurring %}<span class="badge">Recurring</span>{% endif %}
+      </div>
+      <button class="btn btn-sm btn-danger" onclick="deleteSchedule('{{ r.routine_id }}')">Cancel</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No schedules set. Create one below or ask the assistant on the home page.</p>
+  {% endif %}
+
+  <details class="add-form-toggle">
+    <summary class="btn btn-ghost" style="margin-top:0.75rem">New Schedule</summary>
+    <form class="form" onsubmit="createSchedule(event)" style="margin-top:1rem">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="s-profile">Profile</label>
+          <select id="s-profile">
+            <option value="default">Default</option>
+            {% for name in profiles %}
+            <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="s-time">Start Time</label>
+          <input type="time" id="s-time" value="20:00" required>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="s-sound">Sound</label>
+          <select id="s-sound">
+            {% for key, desc in sound_types.items() %}
+            <option value="{{ key }}">{{ key | replace('_', ' ') | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="s-duration">Duration (min)</label>
+          <input type="number" id="s-duration" min="5" max="480" value="30">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="s-fade">Fade Out (min)</label>
+          <input type="number" id="s-fade" min="0" max="60" value="15">
+        </div>
+        <div class="form-group">
+          <label for="s-volume">Volume (%)</label>
+          <input type="number" id="s-volume" min="5" max="80" value="40">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-check"><input type="checkbox" id="s-recurring"> Repeat nightly</label>
+      </div>
+      <button type="submit" class="btn btn-primary">Create Schedule</button>
+    </form>
+  </details>
+</section>
+
+{% endblock %}

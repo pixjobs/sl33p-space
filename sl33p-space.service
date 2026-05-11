@@ -1,0 +1,16 @@
+[Unit]
+Description=sl33p-space sleep sound server
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=sl33p
+Group=sl33p
+WorkingDirectory=/opt/sl33p-space
+EnvironmentFile=/opt/sl33p-space/.env
+ExecStart=/opt/sl33p-space/venv/bin/python run.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

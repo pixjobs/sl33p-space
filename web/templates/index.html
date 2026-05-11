@@ -1,6 +1,28 @@
 {% extends "base.html" %}
-{% block title %}sl33p-space - Dashboard{% endblock %}
+{% block title %}sl33p-space{% endblock %}
 {% block content %}
+
+<!-- ───── Hero ───── -->
+<section class="hero">
+  <h1>sl33p-space</h1>
+  <p class="hero-subtitle">AI-generated sleep music, ambient soundscapes, and a bedtime assistant for your family.</p>
+  <div class="hero-steps">
+    <div class="step">
+      <span class="step-num">1</span>
+      <span>Generate a unique sleep track from a prompt or NASA's Astronomy Picture of the Day</span>
+    </div>
+    <div class="step">
+      <span class="step-num">2</span>
+      <span>Play it in the browser or on your bedroom speaker</span>
+    </div>
+    <div class="step">
+      <span class="step-num">3</span>
+      <span>Set up bedtime schedules and fade-outs per family member</span>
+    </div>
+  </div>
+</section>
+
+<!-- ───── Now Playing ───── -->
 <section class="card now-playing" id="now-playing">
   <h2>Now Playing</h2>
   <div class="status" id="status-display">
@@ -24,45 +46,195 @@
   </div>
 </section>
 
-<section class="card">
-  <h2>Quick Play</h2>
-  <div class="sound-grid">
-    {% for type_key, type_desc in sound_types.items() %}
-    <button class="sound-btn" onclick="quickPlay('{{ type_key }}')" title="{{ type_desc }}">
-      <span class="sound-icon">{{ type_key | sound_icon }}</span>
-      <span class="sound-name">{{ type_key | replace('_', ' ') | title }}</span>
-    </button>
-    {% endfor %}
+<!-- ───── Music Generation ───── -->
+<section class="card hero-card music-page">
+  <h2>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;opacity:0.6">
+      <path d="M12 2L4 7v10l8 5 8-5V7l-8-5z"/>
+    </svg>
+    Generate Sleep Music
+  </h2>
+
+  <div class="generate-section">
+    <!-- Inspire Me -->
+    <div class="inspire-row">
+      <button class="btn btn-inspire" id="inspire-btn" onclick="inspireMe()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px">
+          <path d="M12 2l1.09 3.26L16.18 6l-2.54 2.17L14.36 12 12 10.18 9.64 12l.72-3.83L7.82 6l3.09-.74z"/>
+          <path d="M5 18l1.5-3M19 18l-1.5-3M12 22v-3"/>
+        </svg>
+        Inspire me
+      </button>
+      <button class="btn btn-ghost nasa-btn" onclick="generateNasa()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:15px;height:15px"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        NASA APOD
+      </button>
+    </div>
+
+    <!-- AI Suggestions (populated by JS) -->
+    <div class="suggest-grid" id="suggest-grid"></div>
+
+    <!-- Presets -->
+    <details class="presets-details">
+      <summary class="presets-toggle">Presets</summary>
+      <div class="preset-grid" id="preset-grid">
+        {% for name, prompt in presets.items() %}
+        <button class="preset-btn" data-name="{{ name }}" data-prompt="{{ prompt }}">{{ name }}</button>
+        {% endfor %}
+      </div>
+    </details>
+
+    <!-- Custom Prompt -->
+    <details class="custom-details" id="custom-details">
+      <summary class="presets-toggle">Write your own</summary>
+      <form class="custom-prompt-form" onsubmit="generateCustom(event)">
+        <div class="form-group">
+          <textarea id="custom-prompt" placeholder="Describe the sound... e.g. 'Drifting through Saturn's rings, crystalline ice particle textures, deep resonant bass'" rows="2"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 19V5m0 0l-5 5m5-5l5 5"/></svg>
+          Generate
+        </button>
+      </form>
+    </details>
+  </div>
+
+  <div class="loading-overlay" id="gen-loading">
+    <div class="spinner"></div>
+    <span>Generating your track... this may take a moment</span>
   </div>
 </section>
 
-{% if routines %}
-<section class="card">
-  <h2>Tonight's Schedule</h2>
-  <div class="routine-list">
-    {% for r in routines %}
-    <div class="routine-item">
-      <span class="routine-time">{{ r.start_time }}</span>
-      <span class="routine-sound">{{ r.sound_type | replace('_', ' ') | title }}</span>
-      <span class="routine-profile">{{ r.profile_name }}</span>
-      <span class="routine-duration">{{ r.duration_minutes }}min</span>
+<!-- ───── Music Library ───── -->
+<section class="card music-page">
+  <h2>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;opacity:0.6">
+      <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+    </svg>
+    Library
+    {% if tracks %}<span class="track-count">{{ tracks | length }} track{{ 's' if tracks | length != 1 }}</span>{% endif %}
+  </h2>
+
+  <!-- Player -->
+  <div class="player" id="player">
+    <audio id="player-audio" preload="none"></audio>
+    <div class="player-track" id="player-track-info">
+      <span class="player-title" id="player-title">No track selected</span>
+    </div>
+    <div class="player-controls">
+      <button class="player-btn" id="player-prev" onclick="playerPrev()" title="Previous">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
+      <button class="player-btn player-btn-main" id="player-play" onclick="playerToggle()" title="Play">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:20px;height:20px" id="player-play-icon"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+      <button class="player-btn" id="player-next" onclick="playerNext()" title="Next">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+      </button>
+    </div>
+    <div class="player-progress">
+      <input type="range" id="player-seek" min="0" max="100" value="0" oninput="playerSeek(this.value)">
+      <div class="player-time">
+        <span id="player-current">0:00</span>
+        <span id="player-duration">0:00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Queue -->
+  <div class="queue-section" id="queue-section" style="display:none">
+    <div class="queue-header">
+      <span class="queue-label">Queue</span>
+      <button class="btn btn-ghost btn-sm" onclick="clearQueue()">Clear</button>
+    </div>
+    <div class="queue-list" id="queue-list"></div>
+  </div>
+
+  <!-- Track List -->
+  {% if tracks %}
+  <div class="track-list" id="track-list">
+    {% for track in tracks %}
+    <div class="track-row" data-id="{{ track.id }}" data-src="/media/music/{{ track.filename }}" data-title="{{ track.title }}" data-path="{{ track.path }}" data-prompt="{{ track.prompt | e }}">
+      <button class="track-play-btn" onclick="playTrack(this.closest('.track-row'))" title="Play">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+      <div class="track-info">
+        <span class="track-title">{{ track.title }}</span>
+        <span class="track-meta">{{ track.model }} &middot; {{ track.size_kb }} KB</span>
+      </div>
+      <div class="track-actions">
+        <button class="track-action-btn" onclick="addToQueue(this.closest('.track-row'))" title="Add to queue">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button class="track-action-btn" onclick="suggestVariation(this.closest('.track-row').dataset.prompt)" title="Create variation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 2l1.09 3.26L16.18 6l-2.54 2.17L14.36 12 12 10.18 9.64 12l.72-3.83L7.82 6l3.09-.74z"/></svg>
+        </button>
+        <button class="track-action-btn" onclick="playOnSpeaker('{{ track.path }}')" title="Play on speaker">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+        </button>
+        <button class="track-action-btn" onclick="archiveTrack('{{ track.id }}')" title="Archive">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
+        </button>
+        <button class="track-action-btn track-action-danger" onclick="deleteTrack('{{ track.id }}', '{{ track.title | e }}')" title="Delete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        </button>
+      </div>
     </div>
     {% endfor %}
   </div>
-</section>
-{% endif %}
+  {% else %}
+  <div class="empty">
+    <p>No tracks yet. Generate one above to get started.</p>
+  </div>
+  {% endif %}
 
-{% if profiles %}
+  <!-- Archived -->
+  {% if archived_tracks %}
+  <details class="archive-details">
+    <summary class="archive-toggle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:0.5"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>
+      Archived ({{ archived_tracks | length }})
+    </summary>
+    <div class="track-list" style="margin-top:0.75rem">
+      {% for track in archived_tracks %}
+      <div class="track-row archived" data-id="{{ track.id }}" data-src="/media/music/archive/{{ track.filename }}" data-title="{{ track.title }}" data-path="{{ track.path }}">
+        <button class="track-play-btn" onclick="playTrack(this.closest('.track-row'))" title="Play">
+          <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        </button>
+        <div class="track-info">
+          <span class="track-title">{{ track.title }}</span>
+          <span class="track-meta">{{ track.model }} &middot; {{ track.size_kb }} KB</span>
+        </div>
+        <div class="track-actions">
+          <button class="track-action-btn" onclick="unarchiveTrack('{{ track.id }}')" title="Restore">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 19V5m0 0l-5 5m5-5l5 5"/></svg>
+          </button>
+          <button class="track-action-btn track-action-danger" onclick="deleteTrack('{{ track.id }}', '{{ track.title | e }}')" title="Delete">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</section>
+
+<!-- ───── Chat ───── -->
 <section class="card">
-  <h2>Family</h2>
-  <div class="profile-chips">
-    {% for name, p in profiles.items() %}
-    <a href="/kid/{{ name }}" class="profile-chip" style="text-decoration:none;color:inherit">
-      <span class="profile-name">{{ name }}</span>
-      <span class="profile-bedtime">{{ p.bedtime }}</span>
-    </a>
-    {% endfor %}
+  <h2>Sleep Assistant{% if not has_agent %} <span class="badge" style="font-size:0.65rem;vertical-align:middle">Fallback Mode</span>{% endif %}</h2>
+  <div class="chat-inline">
+    <div class="chat-messages" id="chat-messages">
+      <div class="msg msg-agent">
+        Hi! I can play sounds, generate music, set up bedtime schedules, and answer sleep questions.
+        {% if not has_agent %}(Running in fallback mode — set GOOGLE_API_KEY for full AI support.){% endif %}
+      </div>
+    </div>
+    <form class="chat-input" onsubmit="sendChat(event)">
+      <input type="text" id="chat-input" placeholder="Ask your sleep assistant..." autocomplete="off">
+      <button type="submit" class="btn btn-primary">Send</button>
+    </form>
   </div>
 </section>
-{% endif %}
+
 {% endblock %}

@@ -1,6 +1,6 @@
 import json
 import os
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 
 _player = None
 _library = None
@@ -23,16 +23,24 @@ def create_app(player, library, scheduler, agent_runner=None):
 
     @app.route("/")
     def index():
-        sounds = _library.list_sounds()
-        routines = _scheduler.list_routines()
+        from audio.music_gen import list_generated_music, list_archived_music, get_preset_prompts
         state = _player.state
-        profiles = _load_profiles()
         return render_template(
             "index.html",
-            sounds=sounds,
-            routines=routines,
             state=state,
-            profiles=profiles,
+            presets=get_preset_prompts(),
+            tracks=list_generated_music(),
+            archived_tracks=list_archived_music(),
+            sound_types=_library.get_types(),
+            has_agent=bool(os.environ.get("GOOGLE_API_KEY")),
+        )
+
+    @app.route("/settings")
+    def settings():
+        return render_template(
+            "settings.html",
+            profiles=_load_profiles(),
+            routines=_scheduler.list_routines(),
             sound_types=_library.get_types(),
         )
 
@@ -40,27 +48,15 @@ def create_app(player, library, scheduler, agent_runner=None):
     def kid_view(name):
         profiles = _load_profiles()
         if name not in profiles:
-            return f"No profile for '{name}'. Create one at <a href='/profiles'>/profiles</a>.", 404
+            return f"No profile for '{name}'. Create one at <a href='/settings'>/settings</a>.", 404
         profile = profiles[name]
         sounds = profile.get("preferred_sounds", list(_library.get_types().keys()))
         return render_template("kid.html", profile=profile, sounds=sounds)
 
-    @app.route("/chat")
-    def chat():
-        return render_template("chat.html")
-
-    @app.route("/profiles")
-    def profiles():
-        return render_template("profiles.html", profiles=_load_profiles())
-
-    @app.route("/schedules")
-    def schedules():
-        return render_template(
-            "schedules.html",
-            routines=_scheduler.list_routines(),
-            profiles=_load_profiles(),
-            sound_types=_library.get_types(),
-        )
+    @app.route("/media/music/<path:filename>")
+    def serve_music(filename):
+        music_dir = os.path.abspath("data/music")
+        return send_from_directory(music_dir, filename)
 
     @app.route("/api/status")
     def api_status():
@@ -170,8 +166,9 @@ def create_app(player, library, scheduler, agent_runner=None):
         from audio.music_gen import generate_music
         data = request.get_json(force=True)
         prompt = data.get("prompt", "ambient sleep music")
+        title = data.get("title", "")
         model = data.get("model", "lyria-3-clip-preview")
-        return jsonify(generate_music(prompt, model=model))
+        return jsonify(generate_music(prompt, title=title, model=model))
 
     @app.route("/api/music/nasa", methods=["POST"])
     def api_music_nasa():
@@ -193,6 +190,50 @@ def create_app(player, library, scheduler, agent_runner=None):
         if not path or not os.path.exists(path):
             return jsonify({"error": "Track not found"}), 404
         return jsonify(_player.play(path, volume=volume))
+
+    @app.route("/api/music/<track_id>", methods=["DELETE"])
+    def api_music_delete(track_id):
+        from audio.music_gen import delete_track
+        result = delete_track(track_id)
+        if "error" in result:
+            return jsonify(result), 404
+        return jsonify(result)
+
+    @app.route("/api/music/<track_id>/archive", methods=["POST"])
+    def api_music_archive(track_id):
+        from audio.music_gen import archive_track
+        result = archive_track(track_id)
+        if "error" in result:
+            return jsonify(result), 404
+        return jsonify(result)
+
+    @app.route("/api/music/<track_id>/unarchive", methods=["POST"])
+    def api_music_unarchive(track_id):
+        from audio.music_gen import unarchive_track
+        result = unarchive_track(track_id)
+        if "error" in result:
+            return jsonify(result), 404
+        return jsonify(result)
+
+    @app.route("/api/music/archive")
+    def api_music_archive_list():
+        from audio.music_gen import list_archived_music
+        return jsonify(list_archived_music())
+
+    @app.route("/api/music/suggest")
+    def api_music_suggest():
+        from audio.music_gen import suggest_prompts, list_generated_music
+        existing = [t["title"] for t in list_generated_music()]
+        return jsonify(suggest_prompts(existing))
+
+    @app.route("/api/music/suggest-variation", methods=["POST"])
+    def api_music_suggest_variation():
+        from audio.music_gen import suggest_variation
+        data = request.get_json(force=True)
+        prompt = data.get("prompt", "")
+        if not prompt:
+            return jsonify({"error": "prompt required"}), 400
+        return jsonify(suggest_variation(prompt))
 
     return app
 

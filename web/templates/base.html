@@ -10,10 +10,8 @@
   <nav class="nav">
     <a href="/" class="nav-brand">sl33p-space</a>
     <div class="nav-links">
-      <a href="/" class="{% if request.path == '/' %}active{% endif %}">Dashboard</a>
-      <a href="/chat" class="{% if request.path == '/chat' %}active{% endif %}">Chat</a>
-      <a href="/profiles" class="{% if request.path == '/profiles' %}active{% endif %}">Profiles</a>
-      <a href="/schedules" class="{% if request.path == '/schedules' %}active{% endif %}">Schedules</a>
+      <a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a>
+      <a href="/settings" class="{% if request.path == '/settings' %}active{% endif %}">Settings</a>
     </div>
   </nav>
   <main class="container">
