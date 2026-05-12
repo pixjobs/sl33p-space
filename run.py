@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""sl33p-space entry point."""
+"""sl33p-space entry point.
+
+Usage:
+  Local dev:   python run.py
+  Production:  gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 run:app
+"""
 
 import json
 import os
@@ -46,10 +51,9 @@ def _make_session_logger():
     return log_session
 
 
-def main():
+def create_app():
     config = load_config()
     audio_cfg = config.get("audio", {})
-    web_cfg = config.get("web", {})
 
     from audio.player import AudioPlayer
     from audio.library import SoundLibrary
@@ -69,13 +73,12 @@ def main():
 
     scheduler.start()
 
-    from web.app import create_app
-    app = create_app(player, library, scheduler, agent_runner=chat_handler)
+    from web.app import create_app as create_flask_app
+    flask_app = create_flask_app(player, library, scheduler, agent_runner=chat_handler)
 
-    # Register custom Jinja2 filters
-    @app.template_filter("basename")
+    @flask_app.template_filter("basename")
     def basename_filter(path):
-        return os.path.basename(path).replace(".wav", "") if path else ""
+        return os.path.splitext(os.path.basename(path))[0] if path else ""
 
     sound_icons = {
         "brown_noise": "~",
@@ -88,20 +91,29 @@ def main():
         "lullaby_drone": "#",
     }
 
-    @app.template_filter("sound_icon")
+    @flask_app.template_filter("sound_icon")
     def sound_icon_filter(sound_type):
         return sound_icons.get(sound_type, "~")
 
-    host = web_cfg.get("host", "0.0.0.0")
-    port = web_cfg.get("port", 8080)
+    return flask_app, config
 
-    mcp_servers = [s["name"] for s in config.get("mcp", {}).get("servers", []) if s.get("enabled")]
+
+app, _config = create_app()
+
+
+def main():
+    web_cfg = _config.get("web", {})
+    host = web_cfg.get("host", "0.0.0.0")
+    port = int(os.environ.get("PORT", web_cfg.get("port", 8090)))
+
+    mcp_servers = [s["name"] for s in _config.get("mcp", {}).get("servers", []) if s.get("enabled")]
     has_adk = os.environ.get("GOOGLE_API_KEY")
+    dev_mode = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
     print(f"sl33p-space")
     print(f"  Web UI:  http://localhost:{port}")
+    print(f"  Auth:    {'DEV_MODE (no login required)' if dev_mode else 'Firebase Auth'}")
     print(f"  Agent:   {'Gemini (ADK)' if has_adk else 'Fallback (set GOOGLE_API_KEY for Gemini)'}")
-    print(f"  Audio:   {player._backend or 'simulated (no audio backend found)'}")
-    print(f"  Sounds:  {audio_cfg.get('sounds_dir', 'data/sounds')}")
+    print(f"  Audio:   browser (HTML5)")
     print(f"  MCP:     {', '.join(mcp_servers) if mcp_servers else 'none configured'}")
     print()
 

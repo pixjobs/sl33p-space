@@ -1,137 +1,214 @@
-async function api(url, method = 'GET', body = null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
-  return res.json();
+// ───── Firebase Auth ─────
+let _authToken = null;
+
+if (window.__firebaseConfig) {
+  firebase.initializeApp(window.__firebaseConfig);
+
+  firebase.auth().onAuthStateChanged(function(user) {
+    var signInBtn = document.getElementById('sign-in-btn');
+    var userInfo = document.getElementById('nav-user-info');
+    var avatar = document.getElementById('nav-avatar');
+    var username = document.getElementById('nav-username');
+
+    if (user) {
+      user.getIdToken().then(function(token) { _authToken = token; });
+      if (signInBtn) signInBtn.style.display = 'none';
+      if (userInfo) userInfo.style.display = '';
+      if (avatar) { avatar.src = user.photoURL || ''; avatar.style.display = user.photoURL ? '' : 'none'; }
+      if (username) username.textContent = user.displayName || user.email || '';
+    } else {
+      _authToken = null;
+      if (signInBtn) signInBtn.style.display = '';
+      if (userInfo) userInfo.style.display = 'none';
+    }
+  });
+
+  // Refresh token before expiry
+  setInterval(function() {
+    var user = firebase.auth().currentUser;
+    if (user) user.getIdToken(true).then(function(token) { _authToken = token; });
+  }, 10 * 60 * 1000);
 }
 
-function startBedtime(name, soundType, maxVolume, fadeMinutes) {
-  api('/api/play', 'POST', {
-    sound_type: soundType,
-    duration_minutes: 30,
-    volume: maxVolume,
-  }).then(() => {
-    refreshStatus();
-    setTimeout(() => {
-      api('/api/fade', 'POST', {
-        target: 0,
-        seconds: fadeMinutes * 60,
-      });
-    }, (30 - fadeMinutes) * 60 * 1000);
+function signInWithGoogle() {
+  if (!window.__firebaseConfig) return;
+  var provider = new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithPopup(provider).catch(function(err) {
+    showToast('Sign-in failed: ' + err.message, 'error');
   });
 }
 
-function stopPlayback() {
-  api('/api/stop', 'POST').then(() => refreshStatus());
+function signOutUser() {
+  if (!window.__firebaseConfig) return;
+  firebase.auth().signOut();
 }
 
-function setVolume(val) {
-  document.getElementById('vol-display').textContent = val;
-  api('/api/volume', 'POST', { volume: parseInt(val) });
-}
+// ───── API Helper ─────
 
-function fadeOut() {
-  api('/api/fade', 'POST', { target: 0, seconds: 900 });
-}
-
-async function refreshStatus() {
-  const s = await api('/api/status');
-  const display = document.getElementById('status-display');
-  if (!display) return;
-  if (s.is_playing) {
-    display.innerHTML = `
-      <div class="status-active">
-        <span class="pulse"></span>
-        <span>${s.sound_name || 'Playing'}</span>
-      </div>`;
-  } else {
-    display.innerHTML = '<div class="status-idle">Nothing playing</div>';
+async function api(url, method, body) {
+  method = method || 'GET';
+  var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
+  if (_authToken) opts.headers['Authorization'] = 'Bearer ' + _authToken;
+  if (body) opts.body = JSON.stringify(body);
+  var res = await fetch(url, opts);
+  if (res.status === 401) {
+    showToast('Authentication required. Please sign in.', 'error');
+    return { error: 'Authentication required' };
   }
-  const slider = document.getElementById('volume-slider');
-  if (slider) slider.value = s.volume;
-  const volDisplay = document.getElementById('vol-display');
-  if (volDisplay) volDisplay.textContent = s.volume;
+  return res.json();
 }
+
+// ───── Toast Notifications ─────
+
+function showToast(message, type, duration) {
+  type = type || 'info';
+  duration = duration || 4000;
+  var container = document.getElementById('toast-container');
+  if (!container) return;
+
+  var toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+  toast.textContent = message;
+
+  container.appendChild(toast);
+  requestAnimationFrame(function() { toast.classList.add('toast-visible'); });
+
+  setTimeout(function() {
+    toast.classList.remove('toast-visible');
+    toast.addEventListener('transitionend', function() { toast.remove(); });
+  }, duration);
+}
+
+// ───── Chat ─────
 
 async function sendChat(e) {
   e.preventDefault();
-  const input = document.getElementById('chat-input');
-  const msg = input.value.trim();
+  var input = document.getElementById('chat-input');
+  var msg = input.value.trim();
   if (!msg) return;
 
-  const messages = document.getElementById('chat-messages');
-  messages.innerHTML += `<div class="msg msg-user">${escapeHtml(msg)}</div>`;
+  var messages = document.getElementById('chat-messages');
+  var userMsg = document.createElement('div');
+  userMsg.className = 'msg msg-user';
+  userMsg.textContent = msg;
+  messages.appendChild(userMsg);
   input.value = '';
   messages.scrollTop = messages.scrollHeight;
 
-  const thinking = document.createElement('div');
-  thinking.className = 'msg msg-agent';
+  var thinking = document.createElement('div');
+  thinking.className = 'msg msg-agent msg-thinking';
   thinking.textContent = 'Thinking...';
   messages.appendChild(thinking);
   messages.scrollTop = messages.scrollHeight;
 
-  const data = await api('/api/chat', 'POST', { message: msg });
+  var data = await api('/api/chat', 'POST', { message: msg });
+  thinking.classList.remove('msg-thinking');
   thinking.textContent = data.response || data.error || 'No response';
   messages.scrollTop = messages.scrollHeight;
 }
 
-async function createProfile(e) {
-  e.preventDefault();
-  await api('/api/profiles', 'POST', {
-    name: document.getElementById('p-name').value,
-    bedtime: document.getElementById('p-bedtime').value,
-    max_volume: parseInt(document.getElementById('p-volume').value),
-    fade_minutes: parseInt(document.getElementById('p-fade').value),
-  });
-  location.reload();
-}
-
-async function deleteProfile(name) {
-  if (!confirm(`Remove profile "${name}"?`)) return;
-  await api(`/api/profiles/${encodeURIComponent(name)}`, 'DELETE');
-  location.reload();
-}
-
-async function createSchedule(e) {
-  e.preventDefault();
-  await api('/api/schedules', 'POST', {
-    profile_name: document.getElementById('s-profile').value,
-    sound_type: document.getElementById('s-sound').value,
-    start_time: document.getElementById('s-time').value,
-    duration_minutes: parseInt(document.getElementById('s-duration').value),
-    fade_out_minutes: parseInt(document.getElementById('s-fade').value),
-    volume: parseInt(document.getElementById('s-volume').value),
-    recurring: document.getElementById('s-recurring').checked,
-  });
-  location.reload();
-}
-
-async function deleteSchedule(id) {
-  await api(`/api/schedules/${id}`, 'DELETE');
-  location.reload();
-}
-
 // ───── Music Generation ─────
 
-function _scrollToLibrary() {
-  var url = new URL(window.location.href);
-  url.searchParams.set('t', Date.now());
-  url.hash = 'track-list';
-  window.location.href = url.toString();
+function _createTrackRow(track) {
+  var row = document.createElement('div');
+  row.className = 'track-row';
+  row.dataset.id = track.id;
+  row.dataset.src = '/media/music/' + track.filename;
+  row.dataset.title = track.title;
+  row.dataset.path = track.path;
+  row.dataset.prompt = track.prompt || '';
+
+  // play button
+  var playBtn = document.createElement('button');
+  playBtn.className = 'track-play-btn';
+  playBtn.title = 'Play';
+  playBtn.addEventListener('click', function() { playTrack(row); });
+  playBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  row.appendChild(playBtn);
+
+  // track info
+  var info = document.createElement('div');
+  info.className = 'track-info';
+  var titleSpan = document.createElement('span');
+  titleSpan.className = 'track-title';
+  titleSpan.textContent = track.title;
+  var metaSpan = document.createElement('span');
+  metaSpan.className = 'track-meta';
+  metaSpan.textContent = (track.size_kb || 0) + ' KB';
+  info.appendChild(titleSpan);
+  info.appendChild(metaSpan);
+  row.appendChild(info);
+
+  // action buttons
+  var actions = document.createElement('div');
+  actions.className = 'track-actions';
+
+  function makeActionBtn(title, svg, handler, danger) {
+    var b = document.createElement('button');
+    b.className = 'track-action-btn' + (danger ? ' track-action-danger' : '');
+    b.title = title;
+    b.innerHTML = svg;
+    b.addEventListener('click', handler);
+    return b;
+  }
+
+  actions.appendChild(makeActionBtn('Add to queue',
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg>',
+    function() { addToQueue(row); }));
+
+  actions.appendChild(makeActionBtn('Variation',
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 2l1.09 3.26L16.18 6l-2.54 2.17L14.36 12 12 10.18 9.64 12l.72-3.83L7.82 6l3.09-.74z"/></svg>',
+    function() { suggestVariation(row.dataset.prompt); }));
+
+  actions.appendChild(makeActionBtn('Archive',
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>',
+    function() { archiveTrack(track.id); }));
+
+  actions.appendChild(makeActionBtn('Delete',
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>',
+    function() { deleteTrack(track.id, track.title); }, true));
+
+  row.appendChild(actions);
+  return row;
+}
+
+async function _refreshTrackList() {
+  var tracks = await api('/api/music/library');
+  var list = document.getElementById('track-list');
+  if (!list || !Array.isArray(tracks)) return;
+
+  list.textContent = '';
+  if (tracks.length === 0) {
+    var empty = document.createElement('div');
+    empty.className = 'empty';
+    var p = document.createElement('p');
+    p.textContent = 'No tracks yet. Generate one above.';
+    empty.appendChild(p);
+    list.appendChild(empty);
+    return;
+  }
+
+  tracks.forEach(function(track) {
+    list.appendChild(_createTrackRow(track));
+  });
+
+  var countEl = document.querySelector('.track-count');
+  if (countEl) countEl.textContent = tracks.length + ' track' + (tracks.length !== 1 ? 's' : '');
 }
 
 async function generateMusic(prompt, title) {
-  const overlay = document.getElementById('gen-loading');
+  var overlay = document.getElementById('gen-loading');
   if (overlay) overlay.classList.add('active');
   try {
-    const res = await api('/api/music/generate', 'POST', { prompt, title });
+    var res = await api('/api/music/generate', 'POST', { prompt: prompt, title: title });
     if (res.error) {
-      alert(res.error);
+      showToast(res.error, 'error');
     } else {
-      _scrollToLibrary();
+      showToast('Track generated: ' + (res.title || 'New track'), 'success');
+      await _refreshTrackList();
     }
   } catch (e) {
-    alert('Generation failed: ' + e.message);
+    showToast('Generation failed: ' + e.message, 'error');
   } finally {
     if (overlay) overlay.classList.remove('active');
   }
@@ -143,27 +220,10 @@ function generateFromPreset(name, prompt) {
 
 async function generateCustom(e) {
   e.preventDefault();
-  const input = document.getElementById('custom-prompt');
-  const prompt = input.value.trim();
+  var input = document.getElementById('custom-prompt');
+  var prompt = input.value.trim();
   if (!prompt) return;
   generateMusic(prompt, '');
-}
-
-async function generateNasa() {
-  const overlay = document.getElementById('gen-loading');
-  if (overlay) overlay.classList.add('active');
-  try {
-    const res = await api('/api/music/nasa', 'POST', {});
-    if (res.error) {
-      alert(res.error);
-    } else {
-      _scrollToLibrary();
-    }
-  } catch (e) {
-    alert('NASA generation failed: ' + e.message);
-  } finally {
-    if (overlay) overlay.classList.remove('active');
-  }
 }
 
 // ───── Inspire & Variations ─────
@@ -203,7 +263,7 @@ async function inspireMe() {
       grid.appendChild(card);
     });
   } catch (e) {
-    // silent fail
+    // silent
   }
   btn.disabled = false;
   btn.classList.remove('loading');
@@ -236,25 +296,25 @@ async function suggestVariation(originalPrompt) {
 
 // ───── Player & Queue ─────
 
-const queue = [];
-let queueIndex = -1;
+var queue = [];
+var queueIndex = -1;
 
 function _audio() { return document.getElementById('player-audio'); }
 
 function _formatTime(s) {
   if (!s || isNaN(s)) return '0:00';
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
+  var m = Math.floor(s / 60);
+  var sec = Math.floor(s % 60);
   return m + ':' + (sec < 10 ? '0' : '') + sec;
 }
 
 function _updatePlayerUI() {
-  const audio = _audio();
+  var audio = _audio();
   if (!audio) return;
-  const player = document.getElementById('player');
-  const titleEl = document.getElementById('player-title');
-  const icon = document.getElementById('player-play-icon');
-  const current = queueIndex >= 0 && queueIndex < queue.length ? queue[queueIndex] : null;
+  var player = document.getElementById('player');
+  var titleEl = document.getElementById('player-title');
+  var icon = document.getElementById('player-play-icon');
+  var current = queueIndex >= 0 && queueIndex < queue.length ? queue[queueIndex] : null;
 
   if (current) {
     titleEl.textContent = current.title;
@@ -264,25 +324,23 @@ function _updatePlayerUI() {
     player.classList.remove('has-track');
   }
 
-  // swap play/pause icon using DOM
   icon.replaceChildren();
   if (audio.paused) {
-    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
     poly.setAttribute('points', '5 3 19 12 5 21 5 3');
     icon.appendChild(poly);
   } else {
-    const r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    var r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     r1.setAttribute('x','6'); r1.setAttribute('y','4'); r1.setAttribute('width','4'); r1.setAttribute('height','16');
-    const r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    var r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     r2.setAttribute('x','14'); r2.setAttribute('y','4'); r2.setAttribute('width','4'); r2.setAttribute('height','16');
     icon.appendChild(r1);
     icon.appendChild(r2);
   }
 
-  // highlight active row
   document.querySelectorAll('.track-row').forEach(function(r) { r.classList.remove('active'); });
   if (current) {
-    const row = document.querySelector('.track-row[data-src="' + current.src + '"]');
+    var row = document.querySelector('.track-row[data-src="' + current.src + '"]');
     if (row) row.classList.add('active');
   }
 
@@ -290,11 +348,11 @@ function _updatePlayerUI() {
 }
 
 function _renderQueue() {
-  const section = document.getElementById('queue-section');
-  const list = document.getElementById('queue-list');
+  var section = document.getElementById('queue-section');
+  var list = document.getElementById('queue-list');
   if (!section || !list) return;
 
-  const upcoming = queue.slice(queueIndex + 1);
+  var upcoming = queue.slice(queueIndex + 1);
   if (upcoming.length === 0) {
     section.style.display = 'none';
     return;
@@ -346,8 +404,16 @@ function _loadAndPlay() {
   if (!audio || queueIndex < 0 || queueIndex >= queue.length) return;
   var track = queue[queueIndex];
   audio.src = track.src;
+  var volSlider = document.getElementById('player-volume');
+  if (volSlider) audio.volume = parseInt(volSlider.value) / 100;
   audio.play();
+  _initVisualizer();
   _updatePlayerUI();
+}
+
+function setPlayerVolume(val) {
+  var audio = _audio();
+  if (audio) audio.volume = parseInt(val) / 100;
 }
 
 function playerToggle() {
@@ -357,6 +423,7 @@ function playerToggle() {
     audio.pause();
   } else if (audio.src) {
     audio.play();
+    _initVisualizer();
   } else if (queue.length > 0) {
     queueIndex = 0;
     _loadAndPlay();
@@ -394,13 +461,17 @@ function addToQueue(row) {
   var src = row.dataset.src;
   var title = row.dataset.title;
   var path = row.dataset.path;
-  if (queue.some(function(t) { return t.src === src; })) return;
+  if (queue.some(function(t) { return t.src === src; })) {
+    showToast('Already in queue', 'info');
+    return;
+  }
   queue.push({ src: src, title: title, path: path });
   if (queue.length === 1) {
     queueIndex = 0;
     _loadAndPlay();
   }
   _renderQueue();
+  showToast('Added to queue', 'info');
 }
 
 function removeFromQueue(idx) {
@@ -421,11 +492,7 @@ function clearQueue() {
   _renderQueue();
 }
 
-function playOnSpeaker(path) {
-  api('/api/music/play', 'POST', { path });
-}
-
-// Player time/progress updates
+// Player time/progress
 (function initPlayer() {
   var audio = document.getElementById('player-audio');
   if (!audio) return;
@@ -451,38 +518,104 @@ function playOnSpeaker(path) {
   audio.addEventListener('play', _updatePlayerUI);
 })();
 
-// ───── Library Management ─────
+// ───── Audio Visualizer ─────
+
+var _vizCtx = null;
+var _vizAnalyser = null;
+
+function _initVisualizer() {
+  var canvas = document.getElementById('visualizer');
+  var audio = _audio();
+  if (!canvas || !audio || _vizCtx) return;
+
+  try {
+    _vizCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var source = _vizCtx.createMediaElementSource(audio);
+    _vizAnalyser = _vizCtx.createAnalyser();
+    _vizAnalyser.fftSize = 128;
+    source.connect(_vizAnalyser);
+    _vizAnalyser.connect(_vizCtx.destination);
+    _drawVisualizer(canvas);
+  } catch (e) {
+    // Web Audio not supported or already connected
+  }
+}
+
+function _drawVisualizer(canvas) {
+  if (!_vizAnalyser) return;
+  var ctx = canvas.getContext('2d');
+  var bufferLength = _vizAnalyser.frequencyBinCount;
+  var dataArray = new Uint8Array(bufferLength);
+
+  function draw() {
+    requestAnimationFrame(draw);
+    _vizAnalyser.getByteFrequencyData(dataArray);
+
+    var w = canvas.width = canvas.offsetWidth * (window.devicePixelRatio || 1);
+    var h = canvas.height = canvas.offsetHeight * (window.devicePixelRatio || 1);
+    ctx.clearRect(0, 0, w, h);
+
+    var barCount = Math.min(bufferLength, 48);
+    var barWidth = w / barCount;
+    var gap = 2;
+
+    for (var i = 0; i < barCount; i++) {
+      var val = dataArray[i] / 255;
+      var barHeight = val * h * 0.85;
+
+      var gradient = ctx.createLinearGradient(0, h, 0, h - barHeight);
+      gradient.addColorStop(0, 'rgba(124, 92, 252, 0.6)');
+      gradient.addColorStop(1, 'rgba(139, 92, 246, 0.15)');
+      ctx.fillStyle = gradient;
+
+      var x = i * barWidth + gap / 2;
+      ctx.beginPath();
+      ctx.roundRect(x, h - barHeight, barWidth - gap, barHeight, 2);
+      ctx.fill();
+    }
+  }
+  draw();
+}
+
+// ───── Library Management (no reload) ─────
 
 async function deleteTrack(id, title) {
-  if (!confirm('Delete "' + title + '" permanently? This cannot be undone.')) return;
-  await api('/api/music/' + id, 'DELETE');
-  location.reload();
+  if (!confirm('Delete "' + title + '" permanently?')) return;
+  var res = await api('/api/music/' + id, 'DELETE');
+  if (res.error) { showToast(res.error, 'error'); return; }
+  showToast('Track deleted', 'success');
+  var row = document.querySelector('.track-row[data-id="' + id + '"]');
+  if (row) {
+    row.style.opacity = '0';
+    row.style.transform = 'translateX(20px)';
+    setTimeout(function() { row.remove(); }, 200);
+  }
 }
 
 async function archiveTrack(id) {
-  await api('/api/music/' + id + '/archive', 'POST');
-  location.reload();
+  var res = await api('/api/music/' + id + '/archive', 'POST');
+  if (res.error) { showToast(res.error, 'error'); return; }
+  showToast('Track archived', 'info');
+  var row = document.querySelector('.track-row[data-id="' + id + '"]');
+  if (row) {
+    row.style.opacity = '0';
+    row.style.transform = 'translateX(20px)';
+    setTimeout(function() { row.remove(); }, 200);
+  }
 }
 
 async function unarchiveTrack(id) {
-  await api('/api/music/' + id + '/unarchive', 'POST');
-  location.reload();
+  var res = await api('/api/music/' + id + '/unarchive', 'POST');
+  if (res.error) { showToast(res.error, 'error'); return; }
+  showToast('Track restored', 'success');
+  await _refreshTrackList();
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-if (document.getElementById('status-display')) {
-  setInterval(refreshStatus, 5000);
-}
-
-const presetGrid = document.getElementById('preset-grid');
+// ───── Preset grid click handler ─────
+var presetGrid = document.getElementById('preset-grid');
 if (presetGrid) {
   presetGrid.addEventListener('click', function(e) {
-    const btn = e.target.closest('.preset-btn');
+    var btn = e.target.closest('.preset-btn');
     if (!btn) return;
     generateFromPreset(btn.dataset.name, btn.dataset.prompt);
   });

@@ -1,0 +1,11 @@
+{
+  "auth": {
+    "providers": {
+      "anonymous": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "sl33p-space",
+        "supportEmail": "yang.pei@nihr.ac.uk"
+      }
+    }
+  }
+}

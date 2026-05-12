@@ -82,7 +82,8 @@ class AudioPlayer:
             return
         fp = filepath or self._state.filepath
         duration = time.time() - self._state.started_at if self._state.started_at else 0
-        sound = os.path.basename(fp).replace(".wav", "").replace(".mp3", "") if fp else ""
+        name = os.path.basename(fp) if fp else ""
+        sound = os.path.splitext(name)[0] if name else ""
         try:
             self._on_stop({
                 "sound": sound,

@@ -9,14 +9,31 @@
 <body>
   <nav class="nav">
     <a href="/" class="nav-brand">sl33p-space</a>
-    <div class="nav-links">
-      <a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a>
-      <a href="/settings" class="{% if request.path == '/settings' %}active{% endif %}">Settings</a>
+    <div class="nav-user" id="nav-user">
+      {% if dev_mode %}
+      <span class="badge badge-dev">DEV</span>
+      <span class="nav-username">Developer</span>
+      {% else %}
+      <button class="btn btn-sm btn-ghost" id="sign-in-btn" onclick="signInWithGoogle()" style="display:none">Sign In</button>
+      <div class="nav-user-info" id="nav-user-info" style="display:none">
+        <img class="nav-avatar" id="nav-avatar" src="" alt="">
+        <span class="nav-username" id="nav-username"></span>
+        <button class="btn btn-sm btn-ghost" onclick="signOutUser()">Sign Out</button>
+      </div>
+      {% endif %}
     </div>
   </nav>
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+  <div class="toast-container" id="toast-container"></div>
+  {% if firebase_config %}
+  <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-auth-compat.js"></script>
+  <script>window.__firebaseConfig = {{ firebase_config | tojson }};</script>
+  {% else %}
+  <script>window.__firebaseConfig = null;</script>
+  {% endif %}
   <script src="{{ url_for('static', filename='app.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>

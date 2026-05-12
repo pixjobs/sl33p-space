@@ -11,8 +11,14 @@
     "port": 8090
   },
   "agent": {
-    "model": "gemini-flash-latest",
+    "model": "gemini-3-flash-preview",
     "api_key_env": "GOOGLE_API_KEY"
+  },
+  "music": {
+    "max_tracks_per_user": 3,
+    "max_tracks_total": 20,
+    "target_duration_minutes": 3,
+    "model": "lyria-3-pro-preview"
   },
   "mcp": {
     "servers": [
@@ -21,7 +27,7 @@
         "type": "stdio",
         "command": "npx",
         "args": ["-y", "@mongodb-js/mongodb-mcp-server", "--connectionString", "${MONGODB_URI}"],
-        "enabled": false
+        "enabled": true
       }
     ]
   }

@@ -52,3 +52,12 @@ data/music/
 data/profiles.json
 data/schedules.json
 data/sleep_log.json
+
+# Firebase / GCP credentials
+firebase-service-account.json
+*-firebase-adminsdk-*.json
+credentials.json
+service-account*.json
+
+# Docker
+docker-compose.override.yml

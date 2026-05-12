@@ -17,6 +17,7 @@ _library = None
 _scheduler = None
 _adk_available = False
 _root_agent = None
+_current_user_id = "default"
 
 try:
     from google.adk.agents import Agent
@@ -103,18 +104,20 @@ def generate_sound(sound_type: str, duration_minutes: int = 30,
     return _library.generate_custom(sound_type, duration_minutes, volume)
 
 
-def generate_music_track(prompt: str, model: str = "lyria-3-clip-preview") -> dict:
+def generate_music_track(prompt: str) -> dict:
     """Generate a unique sleep music track using AI (Lyria). Cached after first generation.
+
+    Each user can generate up to 3 tracks. The shared library holds up to 20 total.
+    Tracks are ~3 minutes of high-quality ambient music.
 
     Args:
         prompt: Description of the music to generate (e.g. "gentle ambient with soft rain textures").
-        model: lyria-3-clip-preview for 30-second clips, lyria-3-pro-preview for full songs.
 
     Returns:
         Path to the generated audio file, or error message.
     """
     from audio.music_gen import generate_music
-    return generate_music(prompt, model=model)
+    return generate_music(prompt, user_id=_current_user_id)
 
 
 def list_music_library() -> dict:
@@ -285,18 +288,18 @@ def make_chat_handler(config: dict = None):
         import asyncio
         from google.genai import types as genai_types
 
-        session_id = None
+        sessions: dict[str, str] = {}
 
-        def handle(message: str) -> str:
-            nonlocal session_id
+        def handle(message: str, user_id: str = "default") -> str:
+            global _current_user_id
+            _current_user_id = user_id
 
             async def _run():
-                nonlocal session_id
-                if session_id is None:
+                if user_id not in sessions:
                     session = await runner.session_service.create_session(
-                        app_name="sl33p-space", user_id="parent"
+                        app_name="sl33p-space", user_id=user_id
                     )
-                    session_id = session.id
+                    sessions[user_id] = session.id
 
                 content = genai_types.Content(
                     role="user",
@@ -304,7 +307,8 @@ def make_chat_handler(config: dict = None):
                 )
                 response_parts = []
                 async for event in runner.run_async(
-                    user_id="parent", session_id=session_id, new_message=content
+                    user_id=user_id, session_id=sessions[user_id],
+                    new_message=content,
                 ):
                     if event.content and event.content.parts:
                         for part in event.content.parts:
@@ -323,7 +327,7 @@ def make_chat_handler(config: dict = None):
     return _fallback_handler
 
 
-def _fallback_handler(message: str) -> str:
+def _fallback_handler(message: str, user_id: str = "default") -> str:
     """Simple keyword-based handler when ADK is not available."""
     msg = message.lower().strip()
 

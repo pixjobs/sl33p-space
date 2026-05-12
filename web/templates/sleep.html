@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% block title %}Sleep - sl33p-space{% endblock %}
+{% block content %}
+
+<div class="immersive" id="immersive">
+  <!-- Background layers -->
+  <div class="imm-bg" id="imm-bg">
+    <div class="imm-bg-image" id="imm-bg-image"></div>
+    <div class="imm-bg-overlay"></div>
+  </div>
+
+  <!-- Center content -->
+  <div class="imm-center">
+    <div class="imm-clock" id="imm-clock">00:00</div>
+    <div class="imm-track-info" id="imm-track-info"></div>
+
+    <!-- Breathing guide -->
+    <div class="imm-breathing" id="imm-breathing">
+      <div class="breath-circle" id="breath-circle"></div>
+      <div class="breath-label" id="breath-label">Breathe in</div>
+    </div>
+
+    <!-- Sleep timer -->
+    <div class="imm-timer" id="imm-timer" style="display:none">
+      <span class="timer-label">Sleep in</span>
+      <span class="timer-value" id="timer-value">--</span>
+    </div>
+  </div>
+
+  <!-- Bottom controls (auto-hide) -->
+  <div class="imm-controls" id="imm-controls">
+    <div class="imm-controls-inner">
+      <!-- Play/Pause -->
+      <button class="imm-btn" id="imm-play-btn" onclick="immTogglePlay()" title="Play/Pause">
+        <svg id="imm-play-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+
+      <!-- Loop toggle -->
+      <button class="imm-btn" id="imm-loop-btn" onclick="immToggleLoop()" title="Loop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      </button>
+
+      <!-- Volume -->
+      <div class="imm-volume">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;opacity:0.5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        <input type="range" id="imm-volume" min="0" max="100" value="70" oninput="immSetVolume(this.value)">
+      </div>
+
+      <!-- Mode toggle -->
+      <button class="imm-btn" id="imm-mode-btn" onclick="immCycleMode()" title="Visual mode">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </button>
+
+      <!-- Timer buttons -->
+      <div class="imm-timer-btns">
+        <button class="imm-btn imm-btn-sm" onclick="immSetTimer(30)">30m</button>
+        <button class="imm-btn imm-btn-sm" onclick="immSetTimer(60)">1h</button>
+        <button class="imm-btn imm-btn-sm" onclick="immSetTimer(120)">2h</button>
+        <button class="imm-btn imm-btn-sm" onclick="immSetTimer(0)">Off</button>
+      </div>
+
+      <!-- Breathing toggle -->
+      <button class="imm-btn" id="imm-breath-btn" onclick="immToggleBreathing()" title="Breathing guide">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v12"/><path d="M6 12h12"/></svg>
+      </button>
+
+      <!-- End Sleep -->
+      <button class="imm-btn imm-btn-end" id="imm-end-btn" onclick="immEndSleep()">
+        End Sleep
+      </button>
+    </div>
+  </div>
+
+  <!-- Audio element -->
+  <audio id="imm-audio" loop preload="auto"></audio>
+</div>
+
+<script>
+var _imm = {
+  sessionId: '{{ session_id or "" }}',
+  trackSrc: '{{ track_src or "" }}',
+  trackTitle: '{{ track_title or "" }}',
+  mode: 'minimal',
+  modes: ['minimal', 'cosmos', 'scenic'],
+  modeIndex: 0,
+  breathingOn: true,
+  timerMinutes: 0,
+  timerEnd: null,
+  timerInterval: null,
+  hideTimeout: null,
+  controlsVisible: true,
+  breathPhase: 'in',
+  breathTimer: null,
+  fadeInterval: null,
+  started: false,
+};
+
+// ───── Clock ─────
+function updateClock() {
+  var now = new Date();
+  var h = now.getHours();
+  var m = now.getMinutes();
+  var el = document.getElementById('imm-clock');
+  if (el) el.textContent = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ───── Audio Setup ─────
+(function initAudio() {
+  var audio = document.getElementById('imm-audio');
+  if (!audio) return;
+
+  if (_imm.trackSrc) {
+    audio.src = _imm.trackSrc;
+    audio.volume = 0.7;
+    audio.play().catch(function() {});
+  }
+
+  var info = document.getElementById('imm-track-info');
+  if (info && _imm.trackTitle) {
+    info.textContent = _imm.trackTitle;
+  }
+
+  audio.addEventListener('play', function() { updatePlayIcon(false); });
+  audio.addEventListener('pause', function() { updatePlayIcon(true); });
+})();
+
+function updatePlayIcon(paused) {
+  var icon = document.getElementById('imm-play-icon');
+  if (!icon) return;
+  while (icon.firstChild) icon.removeChild(icon.firstChild);
+
+  if (paused) {
+    var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', '5 3 19 12 5 21 5 3');
+    icon.appendChild(poly);
+  } else {
+    var r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r1.setAttribute('x', '6'); r1.setAttribute('y', '4');
+    r1.setAttribute('width', '4'); r1.setAttribute('height', '16');
+    var r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r2.setAttribute('x', '14'); r2.setAttribute('y', '4');
+    r2.setAttribute('width', '4'); r2.setAttribute('height', '16');
+    icon.appendChild(r1);
+    icon.appendChild(r2);
+  }
+}
+
+function immTogglePlay() {
+  var audio = document.getElementById('imm-audio');
+  if (!audio) return;
+  if (audio.paused) { audio.play().catch(function() {}); }
+  else { audio.pause(); }
+}
+
+function immToggleLoop() {
+  var audio = document.getElementById('imm-audio');
+  if (!audio) return;
+  audio.loop = !audio.loop;
+  var btn = document.getElementById('imm-loop-btn');
+  if (btn) btn.classList.toggle('active', audio.loop);
+}
+
+function immSetVolume(val) {
+  var audio = document.getElementById('imm-audio');
+  if (audio) audio.volume = parseInt(val) / 100;
+}
+
+// ───── Visual Modes ─────
+function immCycleMode() {
+  _imm.modeIndex = (_imm.modeIndex + 1) % _imm.modes.length;
+  _imm.mode = _imm.modes[_imm.modeIndex];
+  applyMode();
+}
+
+async function applyMode() {
+  var bgImage = document.getElementById('imm-bg-image');
+  var immEl = document.getElementById('immersive');
+  if (!bgImage || !immEl) return;
+
+  immEl.setAttribute('data-mode', _imm.mode);
+
+  if (_imm.mode === 'minimal') {
+    bgImage.style.backgroundImage = '';
+  } else if (_imm.mode === 'cosmos') {
+    try {
+      var data = await api('/api/scenes/cosmos');
+      if (data && data.url) {
+        bgImage.style.backgroundImage = 'url(' + data.url + ')';
+      }
+    } catch (e) {
+      bgImage.style.backgroundImage = '';
+    }
+  } else if (_imm.mode === 'scenic') {
+    try {
+      var data = await api('/api/scenes/scenic');
+      if (data && data.url) {
+        bgImage.style.backgroundImage = 'url(' + data.url + ')';
+      }
+    } catch (e) {
+      bgImage.style.backgroundImage = '';
+    }
+  }
+}
+
+// ───── Breathing Guide ─────
+function startBreathing() {
+  if (_imm.breathTimer) return;
+  var circle = document.getElementById('breath-circle');
+  var label = document.getElementById('breath-label');
+  var guide = document.getElementById('imm-breathing');
+  if (!circle || !label || !guide) return;
+
+  guide.style.display = '';
+
+  function cycle() {
+    // Inhale (4s)
+    label.textContent = 'Breathe in';
+    circle.className = 'breath-circle breath-in';
+    _imm.breathTimer = setTimeout(function() {
+      // Hold (7s)
+      label.textContent = 'Hold';
+      circle.className = 'breath-circle breath-hold';
+      _imm.breathTimer = setTimeout(function() {
+        // Exhale (8s)
+        label.textContent = 'Breathe out';
+        circle.className = 'breath-circle breath-out';
+        _imm.breathTimer = setTimeout(cycle, 8000);
+      }, 7000);
+    }, 4000);
+  }
+  cycle();
+}
+
+function stopBreathing() {
+  if (_imm.breathTimer) {
+    clearTimeout(_imm.breathTimer);
+    _imm.breathTimer = null;
+  }
+  var guide = document.getElementById('imm-breathing');
+  if (guide) guide.style.display = 'none';
+}
+
+function immToggleBreathing() {
+  _imm.breathingOn = !_imm.breathingOn;
+  var btn = document.getElementById('imm-breath-btn');
+  if (btn) btn.classList.toggle('active', _imm.breathingOn);
+  if (_imm.breathingOn) startBreathing();
+  else stopBreathing();
+}
+
+// Start breathing by default
+startBreathing();
+document.getElementById('imm-breath-btn').classList.add('active');
+document.getElementById('imm-loop-btn').classList.add('active');
+
+// ───── Sleep Timer ─────
+function immSetTimer(minutes) {
+  var timerEl = document.getElementById('imm-timer');
+  if (_imm.timerInterval) clearInterval(_imm.timerInterval);
+
+  if (minutes <= 0) {
+    _imm.timerMinutes = 0;
+    _imm.timerEnd = null;
+    if (timerEl) timerEl.style.display = 'none';
+    return;
+  }
+
+  _imm.timerMinutes = minutes;
+  _imm.timerEnd = Date.now() + minutes * 60 * 1000;
+  if (timerEl) timerEl.style.display = '';
+
+  _imm.timerInterval = setInterval(function() {
+    var remaining = Math.max(0, _imm.timerEnd - Date.now());
+    var valEl = document.getElementById('timer-value');
+    if (remaining <= 0) {
+      clearInterval(_imm.timerInterval);
+      if (valEl) valEl.textContent = '0:00';
+      fadeOutAudio();
+      return;
+    }
+    var mins = Math.floor(remaining / 60000);
+    var secs = Math.floor((remaining % 60000) / 1000);
+    if (valEl) {
+      var h = Math.floor(mins / 60);
+      var m = mins % 60;
+      if (h > 0) {
+        valEl.textContent = h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+      } else {
+        valEl.textContent = m + ':' + (secs < 10 ? '0' : '') + secs;
+      }
+    }
+  }, 1000);
+}
+
+function fadeOutAudio() {
+  var audio = document.getElementById('imm-audio');
+  if (!audio || audio.paused) return;
+  var vol = audio.volume;
+  var step = vol / 60;
+  _imm.fadeInterval = setInterval(function() {
+    vol -= step;
+    if (vol <= 0.01) {
+      audio.pause();
+      audio.volume = 0.7;
+      clearInterval(_imm.fadeInterval);
+      endSessionOnServer();
+    } else {
+      audio.volume = vol;
+    }
+  }, 1000);
+}
+
+// ───── Session Lifecycle ─────
+(function startSession() {
+  if (!_imm.sessionId) return;
+  _imm.started = true;
+  api('/api/sleep/start', 'POST', {
+    session_id: _imm.sessionId,
+    track: _imm.trackSrc
+  }).catch(function() {});
+})();
+
+function endSessionOnServer() {
+  if (!_imm.sessionId) return;
+  api('/api/sleep/end', 'POST', { session_id: _imm.sessionId }).catch(function() {});
+}
+
+function immEndSleep() {
+  var audio = document.getElementById('imm-audio');
+  if (audio) audio.pause();
+  if (_imm.timerInterval) clearInterval(_imm.timerInterval);
+  if (_imm.fadeInterval) clearInterval(_imm.fadeInterval);
+  stopBreathing();
+
+  if (_imm.sessionId) {
+    endSessionOnServer();
+    window.location.href = '/plan';
+  } else {
+    window.location.href = '/plan';
+  }
+}
+
+// Tab close — best-effort session end
+window.addEventListener('beforeunload', function() {
+  if (_imm.sessionId && _imm.started) {
+    var data = JSON.stringify({ session_id: _imm.sessionId });
+    navigator.sendBeacon('/api/sleep/end', new Blob([data], { type: 'application/json' }));
+  }
+});
+
+// ───── Auto-hide Controls ─────
+function showControls() {
+  var controls = document.getElementById('imm-controls');
+  if (controls) controls.classList.remove('hidden');
+  _imm.controlsVisible = true;
+  resetHideTimer();
+}
+
+function hideControls() {
+  var controls = document.getElementById('imm-controls');
+  if (controls) controls.classList.add('hidden');
+  _imm.controlsVisible = false;
+}
+
+function resetHideTimer() {
+  if (_imm.hideTimeout) clearTimeout(_imm.hideTimeout);
+  _imm.hideTimeout = setTimeout(hideControls, 5000);
+}
+
+document.addEventListener('mousemove', showControls);
+document.addEventListener('touchstart', showControls);
+resetHideTimer();
+
+// ───── Keyboard Shortcuts ─────
+document.addEventListener('keydown', function(e) {
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    immTogglePlay();
+  } else if (e.key === 'Escape') {
+    immEndSleep();
+  } else if (e.key === 'b' || e.key === 'B') {
+    immToggleBreathing();
+  } else if (e.key === 'm' || e.key === 'M') {
+    immCycleMode();
+  }
+});
+</script>
+
+{% endblock %}

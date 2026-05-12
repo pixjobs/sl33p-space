@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8090:8090"
+    env_file:
+      - .env.local
+    environment:
+      - DEV_MODE=true
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:

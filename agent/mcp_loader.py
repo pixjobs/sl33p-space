@@ -43,15 +43,17 @@ def load_mcp_tools(config: dict) -> list:
         try:
             if server_type == "stdio":
                 command = server.get("command", "python3")
-                args = server.get("args", [])
+                args = [os.path.expandvars(a) for a in server.get("args", [])]
                 env = server.get("env")
+                timeout = server.get("timeout", 30.0)
                 toolset = McpToolset(
                     connection_params=StdioConnectionParams(
                         server_params=StdioServerParameters(
                             command=command,
                             args=args,
                             env=env,
-                        )
+                        ),
+                        timeout=timeout,
                     )
                 )
                 toolsets.append(toolset)

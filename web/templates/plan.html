@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block title %}Plan Sleep - sl33p-space{% endblock %}
+{% block content %}
+
+<!-- ───── Pending Review Banner ───── -->
+{% if pending_review %}
+<section class="card review-banner">
+  <div class="review-banner-content">
+    <div class="review-banner-text">
+      <h3>How did you sleep?</h3>
+      <p class="review-banner-meta">
+        {{ pending_review.plan.soundscape_title or 'Sleep session' }}
+        {% if pending_review.actual.duration_minutes %}
+          &mdash; {{ (pending_review.actual.duration_minutes / 60) | round(1) }}h
+        {% endif %}
+      </p>
+    </div>
+    <div class="review-rating-row" id="banner-rating">
+      <button class="rating-btn" data-rating="1" onclick="submitQuickReview('{{ pending_review._id }}', 1)">1</button>
+      <button class="rating-btn" data-rating="2" onclick="submitQuickReview('{{ pending_review._id }}', 2)">2</button>
+      <button class="rating-btn" data-rating="3" onclick="submitQuickReview('{{ pending_review._id }}', 3)">3</button>
+      <button class="rating-btn" data-rating="4" onclick="submitQuickReview('{{ pending_review._id }}', 4)">4</button>
+      <button class="rating-btn" data-rating="5" onclick="submitQuickReview('{{ pending_review._id }}', 5)">5</button>
+    </div>
+    <button class="btn btn-sm btn-ghost" onclick="skipReview('{{ pending_review._id }}')">Skip</button>
+  </div>
+</section>
+{% endif %}
+
+<!-- ───── Greeting ───── -->
+<section class="plan-greeting">
+  <h1>{{ greeting }}, {{ user_name }}</h1>
+  {% if stats and stats.total_sessions > 0 %}
+  <p class="plan-subtitle">
+    {{ stats.total_sessions }} session{{ 's' if stats.total_sessions != 1 }}
+    {% if stats.avg_rating %} &middot; avg {{ stats.avg_rating }}/5{% endif %}
+    {% if stats.top_sound %} &middot; favourite: {{ stats.top_sound }}{% endif %}
+  </p>
+  {% else %}
+  <p class="plan-subtitle">Let's set up your first sleep session</p>
+  {% endif %}
+</section>
+
+<!-- ───── Planning Card ───── -->
+<section class="card plan-card">
+  <h2>Tonight's Plan</h2>
+
+  <!-- Mood Selection -->
+  <div class="mood-section" id="mood-section">
+    <p class="plan-label">How are you feeling?</p>
+    <div class="mood-grid">
+      <button class="mood-btn" data-mood="wired" onclick="selectMood(this)">
+        <span class="mood-emoji">&#x26A1;</span><span>Wired</span>
+      </button>
+      <button class="mood-btn" data-mood="stressed" onclick="selectMood(this)">
+        <span class="mood-emoji">&#x1F62B;</span><span>Stressed</span>
+      </button>
+      <button class="mood-btn" data-mood="restless" onclick="selectMood(this)">
+        <span class="mood-emoji">&#x1F634;</span><span>Restless</span>
+      </button>
+      <button class="mood-btn" data-mood="tired" onclick="selectMood(this)">
+        <span class="mood-emoji">&#x1F971;</span><span>Tired</span>
+      </button>
+      <button class="mood-btn" data-mood="calm" onclick="selectMood(this)">
+        <span class="mood-emoji">&#x1F60C;</span><span>Calm</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Recommendation (populated by JS after mood selection) -->
+  <div class="recommendation" id="recommendation" style="display:none">
+    <div class="rec-loading" id="rec-loading">
+      <div class="spinner"></div>
+      <span>Thinking about your sleep plan...</span>
+    </div>
+    <div class="rec-content" id="rec-content" style="display:none">
+      <div class="rec-row">
+        <span class="rec-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        </span>
+        <span class="rec-value" id="rec-sound">--</span>
+      </div>
+      <div class="rec-row">
+        <span class="rec-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </span>
+        <span class="rec-value" id="rec-duration">--</span>
+      </div>
+      <div class="rec-row">
+        <span class="rec-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/></svg>
+        </span>
+        <span class="rec-value" id="rec-winddown">--</span>
+      </div>
+      <p class="rec-reasoning" id="rec-reasoning"></p>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="plan-actions" id="plan-actions" style="display:none">
+    <button class="btn btn-primary btn-lg" id="btn-start-sleep" onclick="startSleep()">
+      Start Sleep
+    </button>
+    <button class="btn btn-ghost" onclick="skipToSleep()">
+      Skip &amp; sleep now
+    </button>
+  </div>
+</section>
+
+<!-- ───── Sound Library (collapsed) ───── -->
+<section class="card">
+  <details class="library-details">
+    <summary class="presets-toggle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;opacity:0.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      Sound Library
+      {% if tracks %}<span class="track-count">{{ tracks | length }}</span>{% endif %}
+    </summary>
+
+    <div class="library-content">
+      <!-- Generate -->
+      <div class="generate-section">
+        <button class="btn btn-inspire" id="inspire-btn" onclick="inspireMe()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 2l1.09 3.26L16.18 6l-2.54 2.17L14.36 12 12 10.18 9.64 12l.72-3.83L7.82 6l3.09-.74z"/></svg>
+          Inspire me
+        </button>
+        <div class="suggest-grid" id="suggest-grid"></div>
+
+        <details class="custom-details" id="custom-details">
+          <summary class="presets-toggle">Write your own</summary>
+          <form class="custom-prompt-form" onsubmit="generateCustom(event)">
+            <div class="form-group">
+              <textarea id="custom-prompt" placeholder="Describe the sound..." rows="2"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Generate</button>
+          </form>
+        </details>
+      </div>
+
+      <div class="loading-overlay" id="gen-loading">
+        <div class="spinner"></div>
+        <span>Generating your track...</span>
+      </div>
+
+      <!-- Track List -->
+      {% if tracks %}
+      <div class="track-list" id="track-list">
+        {% for track in tracks %}
+        <div class="track-row" data-id="{{ track.id }}" data-src="/media/music/{{ track.filename }}" data-title="{{ track.title }}" data-path="{{ track.path }}" data-prompt="{{ track.prompt | e }}">
+          <button class="track-play-btn" onclick="selectTrackForPlan(this.closest('.track-row'))" title="Select">
+            <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </button>
+          <div class="track-info">
+            <span class="track-title">{{ track.title }}</span>
+            <span class="track-meta">{{ track.size_kb }} KB</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty"><p>No tracks yet. Generate one above.</p></div>
+      {% endif %}
+    </div>
+  </details>
+</section>
+
+<!-- ───── Recent Sessions ───── -->
+{% if recent_sessions %}
+<section class="card">
+  <details class="library-details">
+    <summary class="presets-toggle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;opacity:0.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Recent Sessions
+      <span class="track-count">{{ recent_sessions | length }}</span>
+    </summary>
+    <div class="sessions-list">
+      {% for s in recent_sessions %}
+      <div class="session-row">
+        <div class="session-info">
+          <span class="session-title">{{ s.plan.soundscape_title or 'Session' }}</span>
+          <span class="session-meta">
+            {% if s.actual.duration_minutes %}{{ (s.actual.duration_minutes / 60) | round(1) }}h{% endif %}
+            {% if s.review and s.review.rating %} &middot; {{ s.review.rating }}/5{% endif %}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+</section>
+{% endif %}
+
+<script>
+var _planState = {
+  mood: null,
+  recommendation: null,
+  selectedTrack: null,
+  sessionId: null,
+};
+
+function selectMood(btn) {
+  document.querySelectorAll('.mood-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  _planState.mood = btn.dataset.mood;
+  getRecommendation(_planState.mood);
+}
+
+async function getRecommendation(mood) {
+  var rec = document.getElementById('recommendation');
+  var loading = document.getElementById('rec-loading');
+  var content = document.getElementById('rec-content');
+  var actions = document.getElementById('plan-actions');
+
+  rec.style.display = '';
+  loading.style.display = '';
+  content.style.display = 'none';
+  actions.style.display = 'none';
+
+  try {
+    var data = await api('/api/sleep/recommend', 'POST', { mood: mood });
+    if (data.error) {
+      loading.querySelector('span').textContent = data.error;
+      return;
+    }
+    _planState.recommendation = data;
+    document.getElementById('rec-sound').textContent = data.soundscape_title || 'Ambient sleep sounds';
+    document.getElementById('rec-duration').textContent = (data.duration_hours || 7.5) + ' hours';
+    document.getElementById('rec-winddown').textContent = data.wind_down || '4-7-8 breathing';
+    document.getElementById('rec-reasoning').textContent = data.reasoning || '';
+    loading.style.display = 'none';
+    content.style.display = '';
+    actions.style.display = '';
+  } catch (e) {
+    loading.querySelector('span').textContent = 'Could not get recommendation. Start sleep anyway?';
+    actions.style.display = '';
+  }
+}
+
+function selectTrackForPlan(row) {
+  document.querySelectorAll('.track-row').forEach(function(r) { r.classList.remove('active'); });
+  row.classList.add('active');
+  _planState.selectedTrack = {
+    id: row.dataset.id,
+    src: row.dataset.src,
+    title: row.dataset.title,
+  };
+  document.getElementById('rec-sound').textContent = row.dataset.title;
+}
+
+async function startSleep() {
+  var btn = document.getElementById('btn-start-sleep');
+  btn.disabled = true;
+  btn.textContent = 'Setting up...';
+
+  var plan = {
+    mood: _planState.mood || 'calm',
+    soundscape_title: _planState.selectedTrack ? _planState.selectedTrack.title : (_planState.recommendation ? _planState.recommendation.soundscape_title : null),
+    soundscape_id: _planState.selectedTrack ? _planState.selectedTrack.id : null,
+    soundscape_src: _planState.selectedTrack ? _planState.selectedTrack.src : null,
+    duration_hours: _planState.recommendation ? _planState.recommendation.duration_hours : 7.5,
+    wind_down: _planState.recommendation ? _planState.recommendation.wind_down : '4-7-8 breathing',
+  };
+
+  try {
+    var data = await api('/api/sleep/plan', 'POST', plan);
+    if (data.session_id) {
+      var params = new URLSearchParams();
+      params.set('session', data.session_id);
+      if (plan.soundscape_src) params.set('track', plan.soundscape_src);
+      if (plan.soundscape_title) params.set('title', plan.soundscape_title);
+      window.location.href = '/sleep?' + params.toString();
+    } else {
+      showToast(data.error || 'Failed to create session', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Start Sleep';
+    }
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Start Sleep';
+  }
+}
+
+function skipToSleep() {
+  window.location.href = '/sleep';
+}
+
+async function submitQuickReview(sessionId, rating) {
+  await api('/api/sleep/review', 'POST', { session_id: sessionId, rating: rating });
+  var banner = document.querySelector('.review-banner');
+  if (banner) {
+    banner.style.opacity = '0';
+    banner.style.transform = 'translateY(-10px)';
+    setTimeout(function() { banner.remove(); }, 300);
+  }
+  showToast('Thanks for the feedback!', 'success');
+}
+
+async function skipReview(sessionId) {
+  await api('/api/sleep/review', 'POST', { session_id: sessionId, skip: true });
+  var banner = document.querySelector('.review-banner');
+  if (banner) {
+    banner.style.opacity = '0';
+    setTimeout(function() { banner.remove(); }, 300);
+  }
+}
+</script>
+
+{% endblock %}

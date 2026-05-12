@@ -14,12 +14,20 @@ import shutil
 CACHE_DIR = "data/music"
 CACHE_INDEX = os.path.join(CACHE_DIR, "index.json")
 
-def _text_model() -> str:
+def _load_config() -> dict:
     try:
         with open("config/config.json") as f:
-            return json.load(f).get("agent", {}).get("model", "gemini-flash-latest")
+            return json.load(f)
     except Exception:
-        return "gemini-flash-latest"
+        return {}
+
+
+def _text_model() -> str:
+    return _load_config().get("agent", {}).get("model", "gemini-flash-latest")
+
+
+def _music_config() -> dict:
+    return _load_config().get("music", {})
 
 SLEEP_STYLE = (
     "Instrumental only, no vocals. "
@@ -58,8 +66,10 @@ def _save_index(index: dict):
         json.dump(index, f, indent=2)
 
 
-TARGET_DURATION_MINUTES = 5
+TARGET_DURATION_MINUTES = 3
 CROSSFADE_MS = 3000
+MAX_TRACKS_PER_USER = 3
+MAX_TRACKS_TOTAL = 20
 
 
 def _loop_with_crossfade(filepath: str, target_minutes: int = TARGET_DURATION_MINUTES,
@@ -87,21 +97,27 @@ def _loop_with_crossfade(filepath: str, target_minutes: int = TARGET_DURATION_MI
     fade_ms = 5000
     result = result.fade_in(fade_ms).fade_out(fade_ms)
 
-    extended_path = filepath.replace(".mp3", "_ext.mp3")
-    result.export(extended_path, format="mp3")
+    base, ext = os.path.splitext(filepath)
+    extended_path = f"{base}_ext{ext}"
+    if ext == ".ogg":
+        result.export(extended_path, format="ogg", codec="libopus",
+                      parameters=["-b:a", "128k"])
+    else:
+        result.export(extended_path, format=ext.lstrip("."))
 
     shutil.move(extended_path, filepath)
     return filepath
 
 
 def generate_music(prompt: str, title: str = "",
-                   model: str = "lyria-3-clip-preview") -> dict:
+                   model: str = "", user_id: str = "default") -> dict:
     """Generate music from a text prompt. Returns cached version if available.
 
     Args:
         prompt: Music generation prompt (sleep style is appended automatically).
         title: Human-readable title for the track.
-        model: lyria-3-clip-preview (30s clips).
+        model: Lyria model to use (default from config).
+        user_id: Who is generating (for per-user limits).
 
     Returns:
         dict with path, prompt, title, cached, model keys.
@@ -110,12 +126,27 @@ def generate_music(prompt: str, title: str = "",
     if not api_key:
         return {"error": "GOOGLE_API_KEY not set. Cannot generate music."}
 
+    cfg = _music_config()
+    if not model:
+        model = cfg.get("model", "lyria-3-pro-preview")
+    max_per_user = cfg.get("max_tracks_per_user", MAX_TRACKS_PER_USER)
+    max_total = cfg.get("max_tracks_total", MAX_TRACKS_TOTAL)
+
     full_prompt = f"{prompt}\n\n{SLEEP_STYLE}"
     key = _cache_key(full_prompt)
     index = _load_index()
 
     if key in index and os.path.exists(index[key]["path"]):
         return {**index[key], "cached": True}
+
+    active_tracks = {k: v for k, v in index.items()
+                     if not v.get("archived") and os.path.exists(v.get("path", ""))}
+    if len(active_tracks) >= max_total:
+        return {"error": f"Library is full ({max_total} tracks). Archive or delete tracks to make room."}
+
+    user_tracks = [v for v in active_tracks.values() if v.get("generated_by", "default") == user_id]
+    if len(user_tracks) >= max_per_user:
+        return {"error": f"You've reached your limit of {max_per_user} tracks. Archive or delete one to generate a new track."}
 
     try:
         from google import genai
@@ -132,10 +163,18 @@ def generate_music(prompt: str, title: str = "",
         )
 
         os.makedirs(CACHE_DIR, exist_ok=True)
-        filepath = os.path.join(CACHE_DIR, f"{key}.mp3")
+        filepath = os.path.join(CACHE_DIR, f"{key}.ogg")
         description = ""
 
-        for part in response.candidates[0].content.parts:
+        candidate = response.candidates[0] if response.candidates else None
+        content = candidate.content if candidate else None
+        if not content or not content.parts:
+            reason = ""
+            if candidate and candidate.finish_reason:
+                reason = f" (reason: {candidate.finish_reason})"
+            return {"error": f"Model returned no audio{reason}"}
+
+        for part in content.parts:
             if part.text is not None:
                 description = part.text
             elif part.inline_data is not None:
@@ -145,7 +184,8 @@ def generate_music(prompt: str, title: str = "",
         if not os.path.exists(filepath):
             return {"error": "No audio data in response"}
 
-        _loop_with_crossfade(filepath)
+        target_mins = cfg.get("target_duration_minutes", TARGET_DURATION_MINUTES)
+        _loop_with_crossfade(filepath, target_minutes=target_mins)
 
         entry = {
             "path": filepath,
@@ -153,8 +193,9 @@ def generate_music(prompt: str, title: str = "",
             "title": title or prompt[:60],
             "model": model,
             "description": description,
-            "format": "mp3",
+            "format": "ogg/opus",
             "size_kb": os.path.getsize(filepath) // 1024,
+            "generated_by": user_id,
         }
         index[key] = entry
         _save_index(index)

@@ -5,45 +5,7 @@
 <!-- ───── Hero ───── -->
 <section class="hero">
   <h1>sl33p-space</h1>
-  <p class="hero-subtitle">Your AI sleep coach. Personalised music, bedtime automation, and a routine that learns what works.</p>
-  <div class="hero-steps">
-    <div class="step">
-      <span class="step-num">1</span>
-      <span>Generate unique AI sleep music from a description</span>
-    </div>
-    <div class="step">
-      <span class="step-num">2</span>
-      <span>Play it in your browser and let it fade you to sleep</span>
-    </div>
-    <div class="step">
-      <span class="step-num">3</span>
-      <span>Set up a nightly routine that runs automatically</span>
-    </div>
-  </div>
-</section>
-
-<!-- ───── Now Playing ───── -->
-<section class="card now-playing" id="now-playing">
-  <h2>Now Playing</h2>
-  <div class="status" id="status-display">
-    {% if state.is_playing %}
-    <div class="status-active">
-      <span class="pulse"></span>
-      <span>{{ state.filepath | basename }}</span>
-    </div>
-    {% else %}
-    <div class="status-idle">Nothing playing</div>
-    {% endif %}
-  </div>
-  <div class="controls">
-    <button class="btn btn-stop" onclick="stopPlayback()">Stop</button>
-    <div class="volume-control">
-      <label>Volume: <span id="vol-display">{{ state.volume }}</span>%</label>
-      <input type="range" id="volume-slider" min="0" max="80" value="{{ state.volume }}"
-             oninput="setVolume(this.value)">
-    </div>
-    <button class="btn btn-fade" onclick="fadeOut()">Fade Out (15min)</button>
-  </div>
+  <p class="hero-subtitle">Generate AI sleep music, build a library, and let the agent handle your bedtime routine.</p>
 </section>
 
 <!-- ───── Music Generation ───── -->
@@ -113,7 +75,8 @@
 
   <!-- Player -->
   <div class="player" id="player">
-    <audio id="player-audio" preload="none"></audio>
+    <audio id="player-audio" preload="none" crossorigin="anonymous"></audio>
+    <canvas id="visualizer" class="visualizer"></canvas>
     <div class="player-track" id="player-track-info">
       <span class="player-title" id="player-title">No track selected</span>
     </div>
@@ -134,6 +97,12 @@
         <span id="player-current">0:00</span>
         <span id="player-duration">0:00</span>
       </div>
+    </div>
+    <div class="player-volume">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:0.5;flex-shrink:0">
+        <path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 010 7.07"/>
+      </svg>
+      <input type="range" id="player-volume" min="0" max="100" value="80" oninput="setPlayerVolume(this.value)">
     </div>
   </div>
 
@@ -156,7 +125,7 @@
       </button>
       <div class="track-info">
         <span class="track-title">{{ track.title }}</span>
-        <span class="track-meta">{{ track.model }} &middot; {{ track.size_kb }} KB</span>
+        <span class="track-meta">{{ track.size_kb }} KB</span>
       </div>
       <div class="track-actions">
         <button class="track-action-btn" onclick="addToQueue(this.closest('.track-row'))" title="Add to queue">
@@ -196,7 +165,7 @@
         </button>
         <div class="track-info">
           <span class="track-title">{{ track.title }}</span>
-          <span class="track-meta">{{ track.model }} &middot; {{ track.size_kb }} KB</span>
+          <span class="track-meta">{{ track.size_kb }} KB</span>
         </div>
         <div class="track-actions">
           <button class="track-action-btn" onclick="unarchiveTrack('{{ track.id }}')" title="Restore">
@@ -215,16 +184,16 @@
 
 <!-- ───── Chat ───── -->
 <section class="card">
-  <h2>Sleep Assistant{% if not has_agent %} <span class="badge" style="font-size:0.65rem;vertical-align:middle">Fallback Mode</span>{% endif %}</h2>
+  <h2>Chat{% if not has_agent %} <span class="badge" style="font-size:0.65rem;vertical-align:middle">Fallback</span>{% endif %}</h2>
   <div class="chat-inline">
     <div class="chat-messages" id="chat-messages">
       <div class="msg msg-agent">
-        Hi! I'm your sleep coach. I can generate music, set up bedtime routines, and learn what helps you sleep best.
-        {% if not has_agent %}(Running in fallback mode — set GOOGLE_API_KEY for full AI support.){% endif %}
+        Tell me how you want to sleep tonight and I'll set it up.
+        {% if not has_agent %}(Set GOOGLE_API_KEY for full AI support.){% endif %}
       </div>
     </div>
     <form class="chat-input" onsubmit="sendChat(event)">
-      <input type="text" id="chat-input" placeholder="Ask your sleep assistant..." autocomplete="off">
+      <input type="text" id="chat-input" placeholder="e.g. play something warm and ambient..." autocomplete="off">
       <button type="submit" class="btn btn-primary">Send</button>
     </form>
   </div>
