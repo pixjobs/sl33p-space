@@ -246,16 +246,39 @@ function selectTrackForPlan(row) {
   document.getElementById('rec-sound').textContent = row.dataset.title;
 }
 
+function _resolveTrack() {
+  if (_planState.selectedTrack) return _planState.selectedTrack;
+
+  var recTitle = _planState.recommendation ? _planState.recommendation.soundscape_title : null;
+  var rows = document.querySelectorAll('.track-row');
+  var match = null;
+  var first = null;
+
+  rows.forEach(function(row) {
+    if (!first) first = row;
+    if (recTitle && row.dataset.title.toLowerCase() === recTitle.toLowerCase()) {
+      match = row;
+    }
+  });
+
+  var pick = match || first;
+  if (pick) {
+    return { id: pick.dataset.id, src: pick.dataset.src, title: pick.dataset.title };
+  }
+  return null;
+}
+
 async function startSleep() {
   var btn = document.getElementById('btn-start-sleep');
   btn.disabled = true;
   btn.textContent = 'Setting up...';
 
+  var track = _resolveTrack();
   var plan = {
     mood: _planState.mood || 'calm',
-    soundscape_title: _planState.selectedTrack ? _planState.selectedTrack.title : (_planState.recommendation ? _planState.recommendation.soundscape_title : null),
-    soundscape_id: _planState.selectedTrack ? _planState.selectedTrack.id : null,
-    soundscape_src: _planState.selectedTrack ? _planState.selectedTrack.src : null,
+    soundscape_title: track ? track.title : (_planState.recommendation ? _planState.recommendation.soundscape_title : null),
+    soundscape_id: track ? track.id : null,
+    soundscape_src: track ? track.src : null,
     duration_hours: _planState.recommendation ? _planState.recommendation.duration_hours : 7.5,
     wind_down: _planState.recommendation ? _planState.recommendation.wind_down : '4-7-8 breathing',
   };
