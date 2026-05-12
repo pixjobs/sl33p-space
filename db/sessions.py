@@ -63,6 +63,8 @@ def end_session(session_id: str) -> bool:
     if not session or session["status"] != "active":
         return False
     started = session["actual"].get("started_at")
+    if started and started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
     duration = round((now - started).total_seconds() / 60) if started else 0
     db.sleep_sessions.update_one(
         {"_id": ObjectId(session_id)},
