@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Review Sleep - sl33p-space{% endblock %}
+{% block content %}
+
+<section class="plan-greeting">
+  <h1>How did you sleep?</h1>
+  <p class="plan-subtitle">
+    {{ session.plan.soundscape_title or 'Sleep session' }}
+    {% if session.actual.duration_minutes %}
+      &mdash; {{ (session.actual.duration_minutes / 60) | round(1) }}h
+    {% endif %}
+  </p>
+</section>
+
+<section class="card plan-card">
+  <!-- Rating -->
+  <div class="review-section">
+    <p class="plan-label">Rate your sleep</p>
+    <div class="review-rating-row" id="review-rating">
+      <button class="rating-btn rating-btn-lg" data-rating="1" onclick="selectRating(1)">1</button>
+      <button class="rating-btn rating-btn-lg" data-rating="2" onclick="selectRating(2)">2</button>
+      <button class="rating-btn rating-btn-lg" data-rating="3" onclick="selectRating(3)">3</button>
+      <button class="rating-btn rating-btn-lg" data-rating="4" onclick="selectRating(4)">4</button>
+      <button class="rating-btn rating-btn-lg" data-rating="5" onclick="selectRating(5)">5</button>
+    </div>
+    <div class="review-rating-labels">
+      <span>Terrible</span>
+      <span>Great</span>
+    </div>
+  </div>
+
+  <!-- Notes -->
+  <div class="review-section">
+    <p class="plan-label">Anything to note?</p>
+    <textarea class="review-notes" id="review-notes" rows="3"
+              placeholder="Woke up once, dreamed a lot, felt rested..."></textarea>
+  </div>
+
+  <!-- Actions -->
+  <div class="plan-actions">
+    <button class="btn btn-primary btn-lg" id="btn-submit-review" onclick="submitReview()" disabled>
+      Save Review
+    </button>
+    <button class="btn btn-ghost" onclick="skipThisReview()">Skip</button>
+  </div>
+</section>
+
+<script>
+var _reviewState = {
+  sessionId: '{{ session._id }}',
+  rating: null,
+};
+
+function selectRating(r) {
+  _reviewState.rating = r;
+  document.querySelectorAll('#review-rating .rating-btn').forEach(function(b) {
+    b.classList.toggle('active', parseInt(b.dataset.rating) <= r);
+  });
+  document.getElementById('btn-submit-review').disabled = false;
+}
+
+async function submitReview() {
+  var btn = document.getElementById('btn-submit-review');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  var notes = document.getElementById('review-notes').value.trim();
+  await api('/api/sleep/review', 'POST', {
+    session_id: _reviewState.sessionId,
+    rating: _reviewState.rating,
+    notes: notes,
+  });
+  showToast('Review saved', 'success');
+  window.location.href = '/plan';
+}
+
+async function skipThisReview() {
+  await api('/api/sleep/review', 'POST', {
+    session_id: _reviewState.sessionId,
+    skip: true,
+  });
+  window.location.href = '/plan';
+}
+</script>
+
+{% endblock %}

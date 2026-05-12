@@ -1331,6 +1331,49 @@ details[open] > .presets-toggle::before {
   color: var(--text);
 }
 
+.rating-btn.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.rating-btn-lg {
+  width: 48px;
+  height: 48px;
+  font-size: 1rem;
+}
+
+.review-section {
+  margin-bottom: 1.5rem;
+}
+
+.review-rating-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+  padding: 0 0.25rem;
+}
+
+.review-notes {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+  transition: var(--transition);
+}
+
+.review-notes:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* ───── Sessions List ───── */
 .sessions-list { display: flex; flex-direction: column; margin-top: 0.5rem; }
 
