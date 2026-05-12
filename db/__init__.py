@@ -23,8 +23,17 @@ def get_db():
         return None
 
     try:
+        import certifi
+
+        # pyopenssl 26.x removed X509.get_extension() which pymongo's
+        # OCSP code still calls. Force pymongo to use stdlib ssl instead.
+        import pymongo.ssl_support as _ss
+        _ss._pyssl = None
+        _ss.HAVE_PYSSL = False
+
         from pymongo import MongoClient
-        _client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        _client = MongoClient(uri, serverSelectionTimeoutMS=5000,
+                              tlsCAFile=certifi.where())
         _client.admin.command("ping")
         _db = _client[db_name]
         log.info("Connected to MongoDB: %s", db_name)
