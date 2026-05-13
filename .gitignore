@@ -38,6 +38,7 @@ Thumbs.db
 
 # Logs
 *.log
+firebase-debug.log
 
 # Config (personal)
 config.local.json
@@ -46,11 +47,8 @@ config.local.json
 .env
 .env.local
 
-# Generated data (audio, profiles, logs)
-data/sounds/
+# Generated data
 data/music/
-data/profiles.json
-data/schedules.json
 data/sleep_log.json
 
 # Firebase / GCP credentials

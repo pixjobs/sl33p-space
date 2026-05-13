@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN mkdir -p data/sounds data/music
+RUN mkdir -p data/music
 
 ENV PORT=8090
 EXPOSE ${PORT}

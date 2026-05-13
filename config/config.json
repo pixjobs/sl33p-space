@@ -1,11 +1,4 @@
 {
-  "audio": {
-    "max_volume": 80,
-    "default_volume": 40,
-    "fade_duration_minutes": 15,
-    "sounds_dir": "data/sounds",
-    "playback_backend": "browser"
-  },
   "web": {
     "host": "0.0.0.0",
     "port": 8090
