@@ -1,4 +1,3 @@
-// ───── Firebase Auth ─────
 let _authToken = null;
 
 if (window.__firebaseConfig) {
@@ -55,6 +54,14 @@ async function api(url, method, body) {
     showToast('Authentication required. Please sign in.', 'error');
     return { error: 'Authentication required' };
   }
+  if (res.status === 403) {
+    var tierErr = await res.json();
+    showToast(tierErr.error || 'Generation not allowed — upgrade your plan', 'error');
+    return { tier_error: true, ...tierErr };
+  }
+  if (res.status === 429) {
+    return { quota_error: true, ...await res.json() };
+  }
   return res.json();
 }
 
@@ -79,6 +86,8 @@ function showToast(message, type, duration) {
   }, duration);
 }
 
+// ───── User Quota & Bucket Store ─────
+
 // ───── Chat ─────
 
 async function sendChat(e) {
@@ -101,10 +110,31 @@ async function sendChat(e) {
   messages.appendChild(thinking);
   messages.scrollTop = messages.scrollHeight;
 
-  var data = await api('/api/chat', 'POST', { message: msg });
-  thinking.classList.remove('msg-thinking');
-  thinking.textContent = data.response || data.error || 'No response';
-  messages.scrollTop = messages.scrollHeight;
+  try {
+    var data = await api('/api/chat', 'POST', { message: msg });
+    thinking.classList.remove('msg-thinking');
+    var resp = data.response || data.error || 'No response';
+    thinking.textContent = resp;
+    messages.scrollTop = messages.scrollHeight;
+
+    if (resp.includes('/sleep?')) {
+      var match = resp.match(/(\/sleep\?[^\s"']+)/);
+      if (match) {
+        var link = document.createElement('div');
+        link.className = 'msg msg-agent';
+        var a = document.createElement('a');
+        a.href = match[1];
+        a.style.color = 'var(--accent)';
+        a.textContent = 'Start session →';
+        link.appendChild(a);
+        messages.appendChild(link);
+        messages.scrollTop = messages.scrollHeight;
+      }
+    }
+  } catch (err) {
+    thinking.classList.remove('msg-thinking');
+    thinking.textContent = 'Error: ' + err.message;
+  }
 }
 
 // ───── Music Generation ─────
@@ -174,23 +204,118 @@ function _createTrackRow(track) {
 
 async function _refreshTrackList() {
   var tracks = await api('/api/music/library');
-  var list = document.getElementById('track-list');
-  if (!list || !Array.isArray(tracks)) return;
+  if (!Array.isArray(tracks)) return;
 
-  list.textContent = '';
-  if (tracks.length === 0) {
-    var empty = document.createElement('div');
-    empty.className = 'empty';
-    var p = document.createElement('p');
-    p.textContent = 'No tracks yet. Generate one above.';
-    empty.appendChild(p);
-    list.appendChild(empty);
-    return;
+  var list = document.getElementById('track-list');
+  if (list) {
+    list.textContent = '';
+    if (tracks.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      var p = document.createElement('p');
+      p.textContent = 'No tracks yet. Generate one above.';
+      empty.appendChild(p);
+      list.appendChild(empty);
+    } else {
+      tracks.forEach(function(track) {
+        list.appendChild(_createTrackRow(track));
+      });
+    }
   }
 
-  tracks.forEach(function(track) {
-    list.appendChild(_createTrackRow(track));
-  });
+  var picker = document.getElementById('track-picker');
+  if (picker) {
+    picker.textContent = '';
+    tracks.forEach(function(track) {
+      var btn = document.createElement('button');
+      btn.className = 'track-card';
+      btn.dataset.id = track.id;
+      btn.dataset.src = '/media/music/' + track.filename;
+      btn.dataset.title = track.title;
+      btn.addEventListener('click', function() {
+        if (typeof selectTrackCard === 'function') selectTrackCard(btn);
+      });
+      var title = document.createElement('span');
+      title.className = 'track-card-title';
+      title.textContent = track.title;
+      var meta = document.createElement('span');
+      meta.className = 'track-card-meta';
+      meta.textContent = (track.size_kb || 0) + ' KB';
+      btn.appendChild(title);
+      btn.appendChild(meta);
+      picker.appendChild(btn);
+    });
+  }
+
+  var strip = document.getElementById('channel-strip');
+  if (strip) {
+    strip.textContent = '';
+    tracks.forEach(function(track) {
+      var card = document.createElement('button');
+      card.className = 'channel-card';
+      card.dataset.id = track.id;
+      card.dataset.src = '/media/music/' + track.filename;
+      card.dataset.title = track.title;
+      card.addEventListener('click', function() {
+        if (typeof selectChannel === 'function') selectChannel(card);
+      });
+      var name = document.createElement('div');
+      name.className = 'channel-name';
+      name.textContent = track.title;
+      var meta = document.createElement('div');
+      meta.className = 'channel-meta';
+      meta.textContent = (track.size_kb || 0) + ' KB';
+      card.appendChild(name);
+      card.appendChild(meta);
+      strip.appendChild(card);
+    });
+  }
+
+  var trackStrip = document.getElementById('track-strip');
+  if (trackStrip) {
+    trackStrip.textContent = '';
+    if (tracks.length === 0) {
+      var emptyMsg = document.createElement('span');
+      emptyMsg.className = 'text-xs text-white/30 py-2';
+      emptyMsg.textContent = 'No tracks yet — generate one below';
+      trackStrip.appendChild(emptyMsg);
+    } else {
+      tracks.forEach(function(track) {
+        var energy = track.energy_level || 'low';
+        var chip = document.createElement('button');
+        chip.className = 'track-chip shrink-0 px-4 py-3 bg-transparent border border-border rounded-xl cursor-pointer transition-all min-w-[130px] text-left hover:border-border-hover hover:bg-surface-hover group';
+        chip.dataset.id = track.id;
+        chip.dataset.src = track.src || ('/media/music/' + track.filename);
+        chip.dataset.title = track.title;
+        chip.dataset.moodTags = (track.mood_tags || []).join(',');
+        chip.dataset.energy = energy;
+        chip.addEventListener('click', function() {
+          if (typeof pickTrack === 'function') pickTrack(chip);
+        });
+        var header = document.createElement('div');
+        header.className = 'flex items-center gap-1.5 mb-1';
+        var dot = document.createElement('span');
+        dot.className = 'energy-dot e-' + energy;
+        var eLbl = document.createElement('span');
+        eLbl.className = 'text-[0.55rem] text-white/25 uppercase tracking-wider';
+        eLbl.textContent = energy;
+        header.appendChild(dot);
+        header.appendChild(eLbl);
+        var t = document.createElement('span');
+        t.className = 'block text-[0.8rem] font-medium text-white/80 truncate';
+        t.textContent = track.title;
+        chip.appendChild(header);
+        chip.appendChild(t);
+        if (track.mood_tags && track.mood_tags.length) {
+          var m = document.createElement('span');
+          m.className = 'block text-[0.55rem] text-white/20 mt-1';
+          m.textContent = track.mood_tags.join(' · ');
+          chip.appendChild(m);
+        }
+        trackStrip.appendChild(chip);
+      });
+    }
+  }
 
   var countEl = document.querySelector('.track-count');
   if (countEl) countEl.textContent = tracks.length + ' track' + (tracks.length !== 1 ? 's' : '');
@@ -229,19 +354,17 @@ async function generateCustom(e) {
 // ───── Inspire & Variations ─────
 
 async function inspireMe() {
-  var btn = document.getElementById('inspire-btn');
+  var btn = document.getElementById('inspire-btn') || document.getElementById('btn-inspire');
   var grid = document.getElementById('suggest-grid');
-  if (!btn || !grid) return;
+  if (!grid) return;
 
-  btn.disabled = true;
-  btn.classList.add('loading');
+  if (btn) { btn.disabled = true; btn.classList.add('loading'); }
   grid.replaceChildren();
 
   try {
     var suggestions = await api('/api/music/suggest');
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      btn.disabled = false;
-      btn.classList.remove('loading');
+      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
       return;
     }
 
@@ -265,8 +388,7 @@ async function inspireMe() {
   } catch (e) {
     // silent
   }
-  btn.disabled = false;
-  btn.classList.remove('loading');
+  if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
 }
 
 async function suggestVariation(originalPrompt) {

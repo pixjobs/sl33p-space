@@ -102,6 +102,17 @@ def is_dev_mode() -> bool:
     return _dev_mode
 
 
+def require_login(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({"error": "Login required", "dev_mode": _dev_mode}), 401
+        g.user = user  # Ensure user is set for the route
+        return f(*args, **kwargs)
+    return decorated
+
+
 _synced_users = set()
 
 

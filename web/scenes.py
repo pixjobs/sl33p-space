@@ -4,7 +4,7 @@ from datetime import date
 
 import requests
 
-from db.assets import cache_apod, get_cached_apod, get_latest_apod
+from db.assets import cache_apod, get_cached_apod, get_latest_apod, get_apod_pool
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,41 @@ def get_apod() -> dict | None:
         if fallback:
             return {"url": fallback.get("hdurl") or fallback.get("url"), "title": fallback.get("title", ""), "explanation": fallback.get("explanation", "")}
         return None
+
+
+def get_apod_collection(count: int = 20) -> list[dict]:
+    pool = get_apod_pool(limit=30)
+    if len(pool) >= count:
+        return pool[:count]
+
+    api_key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
+    try:
+        resp = requests.get(
+            "https://api.nasa.gov/planetary/apod",
+            params={"api_key": api_key, "count": min(count, 30)},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        items = resp.json()
+
+        for item in items:
+            if item.get("media_type") != "image":
+                continue
+            apod_date = item.get("date", "")
+            cache_apod(
+                date_str=apod_date,
+                url=item.get("url", ""),
+                hdurl=item.get("hdurl", ""),
+                title=item.get("title", ""),
+                explanation=item.get("explanation", ""),
+                media_type="image",
+            )
+
+        pool = get_apod_pool(limit=count)
+        return pool
+    except Exception as e:
+        log.warning("APOD collection fetch failed: %s", e)
+        return pool
 
 
 def generate_scene_image(theme: str, prompt: str) -> str | None:

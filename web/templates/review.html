@@ -1,86 +1,228 @@
 {% extends "base.html" %}
-{% block title %}Review Sleep - sl33p-space{% endblock %}
+{% block title %}Review - sl33p-space{% endblock %}
+{% block styles %}
+<style>
+.review-page {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 2rem 0;
+}
+
+.review-page-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  background: rgba(52, 211, 133, 0.08);
+  border: 1px solid rgba(52, 211, 133, 0.15);
+  border-radius: 16px;
+  font-size: 0.65rem;
+  color: var(--success);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 1rem;
+}
+
+.review-page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.review-page-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+}
+
+.review-overall {
+  margin-bottom: 1.5rem;
+}
+
+.review-overall-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.review-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.review-metric-card {
+  background: var(--surface);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.review-metric-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.review-card-footer {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.review-card-footer .btn { flex: 1; }
+</style>
+{% endblock %}
+
 {% block content %}
 
-<section class="plan-greeting">
-  <h1>How did you sleep?</h1>
-  <p class="plan-subtitle">
+<section class="review-page">
+  <div class="review-page-badge">Session Complete</div>
+  <h1 class="review-page-title">How did you sleep?</h1>
+  <p class="review-page-subtitle">
     {{ session.plan.soundscape_title or 'Sleep session' }}
     {% if session.actual.duration_minutes %}
       &mdash; {{ (session.actual.duration_minutes / 60) | round(1) }}h
     {% endif %}
   </p>
+
+  <section class="card" style="padding: 1.25rem;">
+    <!-- Overall Rating -->
+    <div class="review-overall">
+      <div class="review-overall-label">Overall Sleep Quality</div>
+      <div class="review-rating-row" id="review-rating">
+        <button class="rating-btn rating-btn-lg" data-rating="1" onclick="selectOverall(1)">1</button>
+        <button class="rating-btn rating-btn-lg" data-rating="2" onclick="selectOverall(2)">2</button>
+        <button class="rating-btn rating-btn-lg" data-rating="3" onclick="selectOverall(3)">3</button>
+        <button class="rating-btn rating-btn-lg" data-rating="4" onclick="selectOverall(4)">4</button>
+        <button class="rating-btn rating-btn-lg" data-rating="5" onclick="selectOverall(5)">5</button>
+      </div>
+    </div>
+
+    <!-- Detailed Metrics -->
+    <div class="review-metrics-grid">
+      <div class="review-metric-card">
+        <div class="review-metric-label">Sleep Depth</div>
+        <div class="review-rating-row" data-metric="depth">
+          <button class="rating-btn" data-rating="1" onclick="selectMetric(this, 1)">1</button>
+          <button class="rating-btn" data-rating="2" onclick="selectMetric(this, 2)">2</button>
+          <button class="rating-btn" data-rating="3" onclick="selectMetric(this, 3)">3</button>
+          <button class="rating-btn" data-rating="4" onclick="selectMetric(this, 4)">4</button>
+          <button class="rating-btn" data-rating="5" onclick="selectMetric(this, 5)">5</button>
+        </div>
+      </div>
+      <div class="review-metric-card">
+        <div class="review-metric-label">Interruptions</div>
+        <div class="review-rating-row" data-metric="interruptions">
+          <button class="rating-btn" data-rating="0" onclick="selectMetric(this, 0)">0</button>
+          <button class="rating-btn" data-rating="1" onclick="selectMetric(this, 1)">1</button>
+          <button class="rating-btn" data-rating="2" onclick="selectMetric(this, 2)">2</button>
+          <button class="rating-btn" data-rating="3" onclick="selectMetric(this, 3)">3</button>
+          <button class="rating-btn" data-rating="4" onclick="selectMetric(this, 4)">4</button>
+        </div>
+      </div>
+      <div class="review-metric-card">
+        <div class="review-metric-label">Dream Recall</div>
+        <div class="review-rating-row" data-metric="dream_recall">
+          <button class="rating-btn" data-rating="0" onclick="selectMetric(this, 0)">0</button>
+          <button class="rating-btn" data-rating="1" onclick="selectMetric(this, 1)">1</button>
+          <button class="rating-btn" data-rating="2" onclick="selectMetric(this, 2)">2</button>
+          <button class="rating-btn" data-rating="3" onclick="selectMetric(this, 3)">3</button>
+          <button class="rating-btn" data-rating="4" onclick="selectMetric(this, 4)">4</button>
+        </div>
+      </div>
+      <div class="review-metric-card">
+        <div class="review-metric-label">Morning Energy</div>
+        <div class="review-rating-row" data-metric="morning_energy">
+          <button class="rating-btn" data-rating="1" onclick="selectMetric(this, 1)">1</button>
+          <button class="rating-btn" data-rating="2" onclick="selectMetric(this, 2)">2</button>
+          <button class="rating-btn" data-rating="3" onclick="selectMetric(this, 3)">3</button>
+          <button class="rating-btn" data-rating="4" onclick="selectMetric(this, 4)">4</button>
+          <button class="rating-btn" data-rating="5" onclick="selectMetric(this, 5)">5</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div style="margin-bottom: 1.5rem;">
+      <div style="font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 0.5rem;">Notes (optional)</div>
+      <textarea id="review-notes" class="review-notes" placeholder="Woke up once, dreamed a lot, felt rested..." rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--glass-border);background:rgba(0,0,0,0.2);color:var(--text);font-family:inherit;font-size:0.8rem;resize:vertical;"></textarea>
+    </div>
+
+    <div class="review-card-footer">
+      <button class="btn btn-primary" id="btn-submit" onclick="submitDebrief()" disabled>Submit</button>
+      <button class="btn btn-ghost" onclick="skipDebrief()">Skip</button>
+    </div>
+  </section>
 </section>
 
-<section class="card plan-card">
-  <!-- Rating -->
-  <div class="review-section">
-    <p class="plan-label">Rate your sleep</p>
-    <div class="review-rating-row" id="review-rating">
-      <button class="rating-btn rating-btn-lg" data-rating="1" onclick="selectRating(1)">1</button>
-      <button class="rating-btn rating-btn-lg" data-rating="2" onclick="selectRating(2)">2</button>
-      <button class="rating-btn rating-btn-lg" data-rating="3" onclick="selectRating(3)">3</button>
-      <button class="rating-btn rating-btn-lg" data-rating="4" onclick="selectRating(4)">4</button>
-      <button class="rating-btn rating-btn-lg" data-rating="5" onclick="selectRating(5)">5</button>
-    </div>
-    <div class="review-rating-labels">
-      <span>Terrible</span>
-      <span>Great</span>
-    </div>
-  </div>
+{% endblock %}
 
-  <!-- Notes -->
-  <div class="review-section">
-    <p class="plan-label">Anything to note?</p>
-    <textarea class="review-notes" id="review-notes" rows="3"
-              placeholder="Woke up once, dreamed a lot, felt rested..."></textarea>
-  </div>
-
-  <!-- Actions -->
-  <div class="plan-actions">
-    <button class="btn btn-primary btn-lg" id="btn-submit-review" onclick="submitReview()" disabled>
-      Save Review
-    </button>
-    <button class="btn btn-ghost" onclick="skipThisReview()">Skip</button>
-  </div>
-</section>
-
+{% block scripts %}
 <script>
 var _reviewState = {
   sessionId: '{{ session._id }}',
-  rating: null,
+  overall: null,
+  metrics: {},
 };
 
-function selectRating(r) {
-  _reviewState.rating = r;
+function selectOverall(val) {
+  _reviewState.overall = val;
   document.querySelectorAll('#review-rating .rating-btn').forEach(function(b) {
-    b.classList.toggle('active', parseInt(b.dataset.rating) <= r);
+    b.classList.toggle('active', parseInt(b.dataset.rating) === val);
   });
-  document.getElementById('btn-submit-review').disabled = false;
+  document.getElementById('btn-submit').disabled = false;
 }
 
-async function submitReview() {
-  var btn = document.getElementById('btn-submit-review');
+function selectMetric(btn, val) {
+  var row = btn.parentElement;
+  row.querySelectorAll('.rating-btn').forEach(function(b) {
+    b.classList.remove('active');
+  });
+  btn.classList.add('active');
+  var metric = row.dataset.metric;
+  _reviewState.metrics[metric] = val;
+}
+
+async function submitDebrief() {
+  var btn = document.getElementById('btn-submit');
   btn.disabled = true;
   btn.textContent = 'Saving...';
 
-  var notes = document.getElementById('review-notes').value.trim();
-  await api('/api/sleep/review', 'POST', {
-    session_id: _reviewState.sessionId,
-    rating: _reviewState.rating,
-    notes: notes,
-  });
-  showToast('Review saved', 'success');
-  window.location.href = '/plan';
+  try {
+    await api('/api/sleep/review', 'POST', {
+      session_id: _reviewState.sessionId,
+      rating: _reviewState.overall,
+      notes: document.getElementById('review-notes').value.trim(),
+      metrics: _reviewState.metrics,
+    });
+    showToast('Review submitted!', 'success');
+    window.location.href = '/plan';
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Submit';
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
-async function skipThisReview() {
-  await api('/api/sleep/review', 'POST', {
-    session_id: _reviewState.sessionId,
-    skip: true,
-  });
-  window.location.href = '/plan';
+async function skipDebrief() {
+  try {
+    await api('/api/sleep/review', 'POST', {
+      session_id: _reviewState.sessionId,
+      skip: true,
+    });
+    window.location.href = '/plan';
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 </script>
-
 {% endblock %}

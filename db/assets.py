@@ -47,6 +47,24 @@ def get_latest_apod() -> dict | None:
     )
 
 
+def get_apod_pool(limit: int = 30) -> list[dict]:
+    db = get_db()
+    if db is None:
+        return []
+    cursor = db.generated_assets.find(
+        {"type": "apod", "media_type": "image"},
+        sort=[("apod_date", -1)],
+    ).limit(limit)
+    results = []
+    for doc in cursor:
+        results.append({
+            "url": doc.get("hdurl") or doc.get("url"),
+            "title": doc.get("title", ""),
+            "date": doc.get("apod_date", ""),
+        })
+    return results
+
+
 def cache_scene_image(theme: str, storage_path: str, prompt: str = "",
                        title: str = "") -> bool:
     db = get_db()

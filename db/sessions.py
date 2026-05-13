@@ -13,7 +13,8 @@ VALID_TRANSITIONS = {
 STALE_HOURS = 12
 
 
-def create_session(user_id: str, plan: dict) -> str | None:
+def create_session(user_id: str, plan: dict,
+                   playlist_id: str = None) -> str | None:
     db = get_db()
     if db is None:
         return None
@@ -23,11 +24,13 @@ def create_session(user_id: str, plan: dict) -> str | None:
         "user_id": user_id,
         "status": "planned",
         "plan": plan,
+        "playlist_id": playlist_id,
         "actual": {
             "started_at": None,
             "ended_at": None,
             "duration_minutes": None,
             "track_played": None,
+            "tracks_played": 0,
         },
         "review": None,
         "created_at": now,
@@ -66,32 +69,56 @@ def end_session(session_id: str) -> bool:
     if started and started.tzinfo is None:
         started = started.replace(tzinfo=timezone.utc)
     duration = round((now - started).total_seconds() / 60) if started else 0
+    update = {
+        "status": "completed",
+        "actual.ended_at": now,
+        "actual.duration_minutes": duration,
+        "updated_at": now,
+    }
     db.sleep_sessions.update_one(
         {"_id": ObjectId(session_id)},
-        {"$set": {
-            "status": "completed",
-            "actual.ended_at": now,
-            "actual.duration_minutes": duration,
-            "updated_at": now,
-        }},
+        {"$set": update},
     )
     return True
 
 
-def review_session(session_id: str, rating: int, notes: str = "") -> bool:
+def update_tracks_played(session_id: str, count: int) -> bool:
+    db = get_db()
+    if db is None:
+        return False
+    db.sleep_sessions.update_one(
+        {"_id": ObjectId(session_id)},
+        {"$set": {"actual.tracks_played": count, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return True
+
+
+VALID_REVIEW_METRICS = {
+    "quality": {"min": 1, "max": 5, "label": "Sleep Quality"},
+    "depth": {"min": 1, "max": 5, "label": "Sleep Depth"},
+    "interruptions": {"min": 0, "max": 5, "label": "Interruptions (0=none)"},
+    "dream_recall": {"min": 0, "max": 5, "label": "Dream Recall"},
+    "morning_energy": {"min": 1, "max": 5, "label": "Morning Energy"},
+}
+
+
+def review_session(session_id: str, rating: int = None, notes: str = "",
+                   metrics: dict = None) -> bool:
     db = get_db()
     if db is None:
         return False
     now = datetime.now(timezone.utc)
+    review_data = {"rating": rating, "notes": notes, "reviewed_at": now}
+    if metrics:
+        review_data["metrics"] = {}
+        for key, val in metrics.items():
+            if key in VALID_REVIEW_METRICS:
+                review_data["metrics"][key] = val
     db.sleep_sessions.update_one(
         {"_id": ObjectId(session_id), "status": "completed"},
         {"$set": {
             "status": "reviewed",
-            "review": {
-                "rating": rating,
-                "notes": notes,
-                "reviewed_at": now,
-            },
+            "review": review_data,
             "updated_at": now,
         }},
     )
@@ -187,6 +214,66 @@ def get_sleep_stats(user_id: str) -> dict:
         "total_sessions": stats.get("total", 0),
         "top_sound": top[0]["_id"] if top else None,
     }
+
+
+def get_sessions_for_month(user_id: str, year: int, month: int) -> list[dict]:
+    db = get_db()
+    if db is None:
+        return []
+    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+
+    cursor = db.sleep_sessions.find(
+        {
+            "user_id": user_id,
+            "status": {"$in": ["completed", "reviewed"]},
+            "created_at": {"$gte": start, "$lt": end},
+        },
+        sort=[("created_at", 1)],
+    )
+    results = []
+    for s in cursor:
+        created = s.get("created_at")
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        review = s.get("review") or {}
+        results.append({
+            "session_id": str(s["_id"]),
+            "day": created.day if created else 1,
+            "rating": review.get("rating"),
+            "duration": s.get("actual", {}).get("duration_minutes"),
+            "track": s.get("plan", {}).get("soundscape_title"),
+            "factors": review.get("factors", []),
+            "notes": review.get("notes", ""),
+        })
+    return results
+
+
+def update_session_factors(session_id: str, factors: list) -> bool:
+    db = get_db()
+    if db is None:
+        return False
+    valid_factors = {"caffeine", "exercise", "screen_time", "stress", "alcohol", "nap", "late_meal"}
+    clean = [f for f in factors if f in valid_factors]
+    now = datetime.now(timezone.utc)
+    oid = ObjectId(session_id)
+    session = db.sleep_sessions.find_one({"_id": oid})
+    if not session or session["status"] not in ("completed", "reviewed"):
+        return False
+    if session.get("review") is None:
+        db.sleep_sessions.update_one(
+            {"_id": oid},
+            {"$set": {"review": {"factors": clean}, "updated_at": now}},
+        )
+    else:
+        db.sleep_sessions.update_one(
+            {"_id": oid},
+            {"$set": {"review.factors": clean, "updated_at": now}},
+        )
+    return True
 
 
 def _auto_complete_stale(db, user_id: str):

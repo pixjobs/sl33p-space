@@ -15,10 +15,18 @@
     "api_key_env": "GOOGLE_API_KEY"
   },
   "music": {
-    "max_tracks_per_user": 3,
-    "max_tracks_total": 20,
-    "target_duration_minutes": 3,
+    "max_tracks_per_user": 10,
+    "max_tracks_total": 50,
+    "target_duration_minutes": 10,
     "model": "lyria-3-pro-preview"
+  },
+  "gcs": {
+    "bucket": "sl33p-space-music"
+  },
+  "tiers": {
+    "trial_days": 7,
+    "free_generations": 2,
+    "subscriber_gens_per_month": 10
   },
   "mcp": {
     "servers": [

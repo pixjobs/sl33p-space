@@ -1,10 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}sl33p-space{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#7c5cfc', hover: '#8e72ff', soft: 'rgba(124,92,252,0.08)', glow: 'rgba(124,92,252,0.15)' },
+            surface: { DEFAULT: 'rgba(255,255,255,0.04)', hover: 'rgba(255,255,255,0.07)', solid: '#13151d' },
+            border: { DEFAULT: 'rgba(255,255,255,0.08)', hover: 'rgba(255,255,255,0.14)' },
+          },
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        },
+      },
+    }
+  </script>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block styles %}{% endblock %}
 </head>
 <body>
   <nav class="nav">

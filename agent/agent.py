@@ -10,11 +10,8 @@ import json
 import os
 from typing import Optional
 
-from agent.prompts import ROOT_PROMPT, SLEEP_COACH_PROMPT
+from agent.prompts import ROOT_PROMPT, PERSONA_CONTEXTS
 
-_player = None
-_library = None
-_scheduler = None
 _adk_available = False
 _root_agent = None
 _current_user_id = "default"
@@ -28,87 +25,14 @@ except ImportError:
     _adk_available = False
 
 
-def _load_profiles() -> dict:
-    path = os.path.join("data", "profiles.json")
-    if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
-    return {}
+VALID_PERSONAS = ["shift_worker", "emergency_services", "shallow_sleeper", "insomniac"]
+VALID_FACTORS = ["caffeine", "exercise", "screen_time", "stress", "alcohol", "nap", "late_meal"]
 
 
-def _save_profiles(profiles: dict):
-    os.makedirs("data", exist_ok=True)
-    with open(os.path.join("data", "profiles.json"), "w") as f:
-        json.dump(profiles, f, indent=2)
-
-
-# --- Tool functions (plain Python, called by Gemini) ---
-
-def play_sound(sound_type: str, volume: Optional[int] = None,
-               duration_minutes: int = 30) -> dict:
-    """Play a sleep sound on the bedroom speaker.
-
-    Args:
-        sound_type: Type of sound (brown_noise, pink_noise, white_noise, rain,
-                    ocean_waves, binaural_beats, ambient_atmosphere, lullaby_drone)
-        volume: Volume percentage (0-80). If not specified, uses default.
-        duration_minutes: How long to generate the sound file (default 30).
-
-    Returns:
-        Status of playback.
-    """
-    filepath = _library.get_sound(sound_type, duration_minutes)
-    if not filepath:
-        return {"error": f"Unknown sound type: {sound_type}. Available: {list(_library.get_types().keys())}"}
-    return _player.play(filepath, volume=volume)
-
-
-def stop_playback() -> dict:
-    """Stop whatever is currently playing."""
-    return _player.stop()
-
-
-def set_volume(level: int) -> dict:
-    """Set the playback volume.
-
-    Args:
-        level: Volume percentage (0-80).
-    """
-    return _player.set_volume(level)
-
-
-def fade_out(target_volume: int = 0, duration_seconds: int = 900) -> dict:
-    """Gradually fade the volume to a target level.
-
-    Args:
-        target_volume: Target volume to fade to (default 0 = silence).
-        duration_seconds: How long the fade should take in seconds (default 900 = 15 min).
-    """
-    return _player.fade_to(target_volume, duration_seconds)
-
-
-def list_sounds() -> dict:
-    """List all available sound types and their descriptions."""
-    return {"sounds": _library.get_types()}
-
-
-def generate_sound(sound_type: str, duration_minutes: int = 30,
-                   volume: float = 0.5) -> dict:
-    """Generate a custom sleep sound file.
-
-    Args:
-        sound_type: Type of sound to generate.
-        duration_minutes: Duration in minutes.
-        volume: Recording volume (0.0 to 1.0).
-    """
-    return _library.generate_custom(sound_type, duration_minutes, volume)
-
+# --- Tool functions (called by Gemini) ---
 
 def generate_music_track(prompt: str) -> dict:
-    """Generate a unique sleep music track using AI (Lyria). Cached after first generation.
-
-    Each user can generate up to 3 tracks. The shared library holds up to 20 total.
-    Tracks are ~3 minutes of high-quality ambient music.
+    """Generate a unique sleep music track using AI (Lyria).
 
     Args:
         prompt: Description of the music to generate (e.g. "gentle ambient with soft rain textures").
@@ -121,133 +45,255 @@ def generate_music_track(prompt: str) -> dict:
 
 
 def list_music_library() -> dict:
-    """List all AI-generated music tracks in the cache."""
+    """List all AI-generated music tracks in the library."""
     from audio.music_gen import list_generated_music
     return {"tracks": list_generated_music()}
 
 
-def get_status() -> dict:
-    """Get the current playback status including what's playing, volume, etc."""
-    state = _player.state
+def get_sleep_history(limit: int = 7) -> dict:
+    """Get the current user's recent sleep sessions and stats.
+
+    Args:
+        limit: Number of recent sessions to return (default 7).
+
+    Returns:
+        Recent sessions with ratings, durations, factors, and overall stats.
+    """
+    from db.sessions import get_recent_sessions, get_sleep_stats
+    sessions = get_recent_sessions(_current_user_id, limit=limit)
+    stats = get_sleep_stats(_current_user_id)
+    formatted = []
+    for s in sessions:
+        review = s.get("review") or {}
+        formatted.append({
+            "track": s.get("plan", {}).get("soundscape_title", "Unknown"),
+            "mood": s.get("plan", {}).get("mood", ""),
+            "duration_minutes": round(s.get("actual", {}).get("duration_minutes", 0), 1),
+            "rating": review.get("rating"),
+            "factors": review.get("factors", []),
+        })
+    return {"recent_sessions": formatted, "stats": stats}
+
+
+def recommend_sleep_plan(mood: str = "calm") -> dict:
+    """Recommend a sleep plan with a mood-aware playlist.
+
+    Args:
+        mood: Current mood (wired, stressed, restless, tired, calm).
+
+    Returns:
+        Recommended sleep plan with playlist tracks and reasoning context.
+    """
+    from audio.music_gen import list_generated_music
+    from audio.playlist import build_playlist
+    from db.sessions import get_recent_sessions, get_sleep_stats
+    from db.users import get_persona
+
+    tracks = list_generated_music()
+    stats = get_sleep_stats(_current_user_id)
+    persona = get_persona(_current_user_id)
+
+    playlist_data = build_playlist(mood, persona, _current_user_id)
+    playlist_tracks = []
+    if playlist_data:
+        playlist_tracks = [
+            {"title": t["title"], "role": t["role"], "energy": t.get("energy_level")}
+            for t in playlist_data.get("tracks", [])
+        ]
+
+    best_rated = None
+    for s in get_recent_sessions(_current_user_id, limit=7):
+        r = (s.get("review") or {}).get("rating", 0)
+        if r >= 4:
+            best_rated = s.get("plan", {}).get("soundscape_title")
+            break
+
     return {
-        "is_playing": state.is_playing,
-        "sound": os.path.basename(state.filepath).replace(".wav", "") if state.filepath else "nothing",
-        "volume": state.volume,
+        "available_tracks": [t["title"] for t in tracks],
+        "playlist_preview": playlist_tracks,
+        "playlist_id": playlist_data.get("playlist_id") if playlist_data else None,
+        "total_sessions": stats.get("total_sessions", 0),
+        "avg_rating": stats.get("avg_rating"),
+        "top_sound": stats.get("top_sound") or best_rated,
+        "mood": mood,
+        "persona": persona,
     }
 
 
-def create_schedule(profile_name: str, sound_type: str, start_time: str,
-                    duration_minutes: int = 30, fade_out_minutes: int = 15,
-                    volume: int = 40, recurring: bool = False) -> dict:
-    """Create a bedtime schedule that plays automatically.
+def start_sleep_session(track_title: str = "", mood: str = "calm") -> dict:
+    """Start a sleep session with a mood-aware playlist and return the URL.
 
     Args:
-        profile_name: Name of the family member (or 'default').
-        sound_type: Type of sound to play.
-        start_time: When to start, in HH:MM format (24-hour).
-        duration_minutes: How long to play.
-        fade_out_minutes: How long to fade out before stopping.
-        volume: Playback volume percentage.
-        recurring: Whether to repeat every night.
+        track_title: Title of a preferred track. Playlist will still be built around mood.
+        mood: User's current mood.
+
+    Returns:
+        Dict with redirect_url for the sleep page, or error.
     """
-    from audio.scheduler import ScheduledRoutine
-    routine = ScheduledRoutine(
-        profile_name=profile_name,
-        sound_type=sound_type,
-        start_time=start_time,
-        duration_minutes=duration_minutes,
-        fade_out_minutes=fade_out_minutes,
-        volume=volume,
-        recurring=recurring,
-    )
-    return _scheduler.schedule(routine)
+    from audio.music_gen import list_generated_music
+    from audio.playlist import build_playlist
+    from db.sessions import create_session
+    from db.users import get_persona
+
+    tracks = list_generated_music()
+    persona = get_persona(_current_user_id)
+
+    playlist_data = build_playlist(mood, persona, _current_user_id)
+    playlist_id = playlist_data.get("playlist_id") if playlist_data else None
+
+    if playlist_data and playlist_data.get("tracks"):
+        first = playlist_data["tracks"][0]
+        plan = {
+            "soundscape_id": first.get("track_id"),
+            "soundscape_title": first.get("title"),
+            "soundscape_src": first.get("src"),
+            "duration_target_hours": 7.5,
+            "wind_down": "4-7-8 breathing",
+            "mood": mood,
+        }
+    else:
+        selected = None
+        for t in tracks:
+            if track_title and t["title"].lower() == track_title.lower():
+                selected = t
+                break
+        if not selected and tracks:
+            selected = tracks[0]
+        plan = {
+            "soundscape_id": selected["id"] if selected else None,
+            "soundscape_title": selected["title"] if selected else "Ambient",
+            "soundscape_src": selected.get("src") if selected else None,
+            "duration_target_hours": 7.5,
+            "wind_down": "4-7-8 breathing",
+            "mood": mood,
+        }
+
+    session_id = create_session(_current_user_id, plan, playlist_id=playlist_id)
+    if not session_id:
+        return {"error": "Could not create session"}
+
+    params = [f"session={session_id}"]
+    if playlist_id:
+        params.append(f"playlist={playlist_id}")
+    if plan["soundscape_src"]:
+        params.append(f"track={plan['soundscape_src']}")
+    if plan["soundscape_title"]:
+        params.append(f"title={plan['soundscape_title']}")
+
+    track_list = [t["title"] for t in playlist_data.get("tracks", [])] if playlist_data else [plan["soundscape_title"]]
+
+    return {
+        "redirect_url": "/sleep?" + "&".join(params),
+        "session_id": session_id,
+        "tracks": track_list,
+    }
 
 
-def cancel_schedule(routine_id: str) -> dict:
-    """Cancel a scheduled bedtime routine.
+def get_user_persona() -> dict:
+    """Get the current user's sleep persona and what it means.
+
+    Returns:
+        Persona key, label, and description. Or null if no persona set.
+    """
+    from db.users import get_persona
+    persona = get_persona(_current_user_id)
+    if persona and persona in PERSONA_CONTEXTS:
+        labels = {
+            "shift_worker": "Shift Worker",
+            "emergency_services": "Emergency Services",
+            "shallow_sleeper": "Shallow Sleeper",
+            "insomniac": "Insomniac",
+        }
+        return {
+            "persona": persona,
+            "label": labels.get(persona, persona),
+            "context": PERSONA_CONTEXTS[persona],
+        }
+    return {"persona": None, "label": "None set", "context": ""}
+
+
+def set_user_persona(persona_key: str) -> dict:
+    """Set the current user's sleep persona.
 
     Args:
-        routine_id: The ID of the routine to cancel.
+        persona_key: One of: shift_worker, emergency_services, shallow_sleeper, insomniac.
+                     Pass empty string to clear.
+
+    Returns:
+        Confirmation of the persona set.
     """
-    return _scheduler.cancel(routine_id)
+    from db.users import set_persona
+    if persona_key and persona_key not in VALID_PERSONAS:
+        return {"error": f"Invalid persona. Choose from: {VALID_PERSONAS}"}
+    set_persona(_current_user_id, persona_key or None)
+    return {"set": persona_key or None}
 
 
-def list_schedules() -> dict:
-    """List all active bedtime schedules."""
-    return {"schedules": _scheduler.list_routines()}
+def get_tracking_level() -> dict:
+    """Get the user's data tracking preference (minimal, basic, or detailed)."""
+    from db.users import get_user
+    user = get_user(_current_user_id)
+    if user:
+        level = user.get("preferences", {}).get("tracking_level", "basic")
+        return {"tracking_level": level}
+    return {"tracking_level": "basic"}
 
 
-def get_profile(name: str) -> dict:
-    """Get a family member's sleep profile.
+def get_user_tier_info() -> dict:
+    """Get the current user's subscription tier, credits, and generation allowance.
+
+    Returns:
+        Tier type, trial status, credits balance, and whether they can generate tracks.
+    """
+    from db.tiers import get_user_tier
+    return get_user_tier(_current_user_id)
+
+
+def log_factors(session_id: str, factors: str) -> dict:
+    """Log lifestyle factors for a sleep session.
 
     Args:
-        name: The family member's name.
+        session_id: The session ID to log factors for.
+        factors: Comma-separated factors from: caffeine, exercise, screen_time, stress, alcohol, nap, late_meal.
+
+    Returns:
+        Confirmation.
     """
-    profiles = _load_profiles()
-    if name in profiles:
-        return profiles[name]
-    return {"error": f"No profile found for '{name}'. Available: {list(profiles.keys())}"}
+    from db.sessions import update_session_factors
+    factor_list = [f.strip() for f in factors.split(",") if f.strip()]
+    valid = [f for f in factor_list if f in VALID_FACTORS]
+    if update_session_factors(session_id, valid):
+        return {"logged": valid}
+    return {"error": "Could not update session"}
 
-
-def update_profile(name: str, bedtime: str = None, max_volume: int = None,
-                   fade_minutes: int = None, preferred_sounds: list = None) -> dict:
-    """Update a family member's sleep preferences.
-
-    Args:
-        name: The family member's name.
-        bedtime: Preferred bedtime in HH:MM format.
-        max_volume: Maximum allowed volume percentage.
-        fade_minutes: Default fade-out duration in minutes.
-        preferred_sounds: List of preferred sound types.
-    """
-    profiles = _load_profiles()
-    profile = profiles.get(name, {
-        "name": name,
-        "preferred_sounds": ["brown_noise"],
-        "bedtime": "20:00",
-        "max_volume": 60,
-        "fade_minutes": 15,
-    })
-    if bedtime is not None:
-        profile["bedtime"] = bedtime
-    if max_volume is not None:
-        profile["max_volume"] = min(max_volume, _player.max_volume)
-    if fade_minutes is not None:
-        profile["fade_minutes"] = fade_minutes
-    if preferred_sounds is not None:
-        profile["preferred_sounds"] = preferred_sounds
-    profiles[name] = profile
-    _save_profiles(profiles)
-    return {"updated": name, "profile": profile}
-
-
-SLEEP_COACH_TOOLS = [
-    get_profile, update_profile, play_sound, fade_out, get_status,
-    create_schedule, cancel_schedule, list_schedules,
-    generate_music_track, list_music_library,
-]
 
 ROOT_TOOLS = [
-    play_sound, stop_playback, set_volume, fade_out,
-    list_sounds, generate_sound, get_status,
-    update_profile,
-    generate_music_track, list_music_library,
+    get_sleep_history,
+    recommend_sleep_plan,
+    start_sleep_session,
+    generate_music_track,
+    list_music_library,
+    get_user_persona,
+    set_user_persona,
+    get_tracking_level,
+    get_user_tier_info,
+    log_factors,
 ]
 
-ALL_TOOLS = ROOT_TOOLS + [
-    create_schedule, cancel_schedule, list_schedules,
-    get_profile,
-]
+
+def _build_prompt(user_id: str) -> str:
+    """Build the root prompt with persona context injected."""
+    from db.users import get_persona
+    persona = get_persona(user_id)
+    context = ""
+    if persona and persona in PERSONA_CONTEXTS:
+        context = PERSONA_CONTEXTS[persona]
+    else:
+        context = "No specific persona set. Adapt naturally to the user's tone."
+    return ROOT_PROMPT.format(persona_context=context)
 
 
-def init(player, library, scheduler):
-    global _player, _library, _scheduler
-    _player = player
-    _library = library
-    _scheduler = scheduler
-
-
-def create_runner(config: dict = None):
+def create_runner(config: dict = None, prompt: str = None):
     """Create and return an ADK agent runner if google-adk is available."""
     global _root_agent
     if not _adk_available:
@@ -259,22 +305,15 @@ def create_runner(config: dict = None):
     mcp_tools = load_mcp_tools(config or {})
     model = (config or {}).get("agent", {}).get("model", "gemini-flash-latest")
 
-    sleep_coach = Agent(
-        name="sleep_coach",
-        model=model,
-        description="Handles bedtime setup: profile lookup, history-based recommendation, "
-                    "playback, fade-out scheduling, and routine creation.",
-        instruction=SLEEP_COACH_PROMPT,
-        tools=SLEEP_COACH_TOOLS + mcp_tools,
-        disallow_transfer_to_parent=False,
+    instruction = prompt or ROOT_PROMPT.format(
+        persona_context="No specific persona set. Adapt naturally to the user's tone."
     )
 
     _root_agent = Agent(
         name="sl33p_space",
         model=model,
-        instruction=ROOT_PROMPT,
-        tools=ROOT_TOOLS,
-        sub_agents=[sleep_coach],
+        instruction=instruction,
+        tools=ROOT_TOOLS + mcp_tools,
     )
     runner = InMemoryRunner(agent=_root_agent, app_name="sl33p-space")
     return runner
@@ -282,88 +321,84 @@ def create_runner(config: dict = None):
 
 def make_chat_handler(config: dict = None):
     """Return a function that handles chat messages via ADK or fallback."""
-    runner = create_runner(config)
+    if not _adk_available or not os.environ.get("GOOGLE_API_KEY"):
+        return _fallback_handler
 
-    if runner:
-        import asyncio
-        from google.genai import types as genai_types
+    import asyncio
 
-        sessions: dict[str, str] = {}
+    _config = config
+    _runners: dict[str, object] = {}
+    _sessions: dict[str, str] = {}
 
-        def handle(message: str, user_id: str = "default") -> str:
-            global _current_user_id
-            _current_user_id = user_id
+    def handle(message: str, user_id: str = "default") -> str:
+        global _current_user_id
+        _current_user_id = user_id
 
-            async def _run():
-                if user_id not in sessions:
-                    session = await runner.session_service.create_session(
-                        app_name="sl33p-space", user_id=user_id
-                    )
-                    sessions[user_id] = session.id
+        prompt = _build_prompt(user_id)
 
-                content = genai_types.Content(
-                    role="user",
-                    parts=[genai_types.Part(text=message)]
+        if user_id not in _runners:
+            runner = create_runner(_config, prompt=prompt)
+            if not runner:
+                return _fallback_handler(message, user_id)
+            _runners[user_id] = runner
+
+        runner = _runners[user_id]
+
+        async def _run():
+            if user_id not in _sessions:
+                session = await runner.session_service.create_session(
+                    app_name="sl33p-space", user_id=user_id
                 )
-                response_parts = []
-                async for event in runner.run_async(
-                    user_id=user_id, session_id=sessions[user_id],
-                    new_message=content,
-                ):
-                    if event.content and event.content.parts:
-                        for part in event.content.parts:
-                            if part.text:
-                                response_parts.append(part.text)
-                return " ".join(response_parts) if response_parts else "Done."
+                _sessions[user_id] = session.id
 
-            loop = asyncio.new_event_loop()
-            try:
-                return loop.run_until_complete(_run())
-            finally:
-                loop.close()
+            content = genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text=message)]
+            )
+            response_parts = []
+            async for event in runner.run_async(
+                user_id=user_id, session_id=_sessions[user_id],
+                new_message=content,
+            ):
+                if event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if part.text:
+                            response_parts.append(part.text)
+            return " ".join(response_parts) if response_parts else "Done."
 
-        return handle
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_run())
+        finally:
+            loop.close()
 
-    return _fallback_handler
+    return handle
 
 
 def _fallback_handler(message: str, user_id: str = "default") -> str:
     """Simple keyword-based handler when ADK is not available."""
     msg = message.lower().strip()
 
-    if any(w in msg for w in ["play", "start"]):
-        for sound_type in _library.get_types():
-            if sound_type.replace("_", " ") in msg or sound_type in msg:
-                result = play_sound(sound_type)
-                return f"Playing {sound_type.replace('_', ' ')}. {json.dumps(result)}"
-        result = play_sound("brown_noise")
-        return f"Playing brown noise (default). Set GOOGLE_API_KEY for smarter responses."
+    if any(w in msg for w in ["history", "how have i", "how did i"]):
+        global _current_user_id
+        _current_user_id = user_id
+        data = get_sleep_history()
+        if data["stats"].get("total_sessions", 0) > 0:
+            return (f"You've had {data['stats']['total_sessions']} sessions "
+                    f"with an average rating of {data['stats']['avg_rating'] or '?'}/5.")
+        return "No sleep sessions yet. Start your first one!"
 
-    if any(w in msg for w in ["stop", "quiet", "silence"]):
-        stop_playback()
-        return "Stopped playback."
+    if any(w in msg for w in ["persona", "profile", "who am i"]):
+        return ("I can adapt to your sleep style. Choose a persona on the plan page: "
+                "Shift Worker, Emergency Services, Shallow Sleeper, or Insomniac.")
 
-    if "fade" in msg:
-        fade_out()
-        return "Fading out over 15 minutes."
-
-    if any(w in msg for w in ["volume", "louder", "softer"]):
-        return f"Current volume: {get_status()['volume']}%. Use the volume slider to adjust."
-
-    if any(w in msg for w in ["sound", "list", "available", "type"]):
-        types = list_sounds()["sounds"]
-        return "Available sounds: " + ", ".join(k.replace("_", " ") for k in types)
-
-    if any(w in msg for w in ["status", "what", "playing"]):
-        s = get_status()
-        if s["is_playing"]:
-            return f"Currently playing: {s['sound']} at {s['volume']}% volume."
-        return "Nothing is playing right now."
+    if any(w in msg for w in ["sleep", "start", "ready", "tired", "bed"]):
+        return ("Ready to sleep? Pick a track and hit Start Sleep. "
+                "Set GOOGLE_API_KEY for personalized recommendations.")
 
     if any(w in msg for w in ["help", "what can"]):
-        return ("I can play sleep sounds, set schedules, and manage family profiles. "
-                "Try: 'play rain', 'list sounds', 'stop', or 'fade out'. "
-                "Set GOOGLE_API_KEY for full natural language support.")
+        return ("I'm your sleep buddy. I can recommend tracks, start sessions, "
+                "and learn your patterns. Set GOOGLE_API_KEY for full Gemini support.")
 
-    return ("I'm not sure what you mean. Try 'play brown noise', 'stop', 'fade out', "
-            "or 'list sounds'. Set GOOGLE_API_KEY for full Gemini-powered responses.")
+    return ("I can help you sleep better. Try 'start sleep', 'history', or 'help'. "
+            "Set GOOGLE_API_KEY for full natural language support.")

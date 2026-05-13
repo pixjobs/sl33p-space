@@ -1,13 +1,12 @@
 import json
 import os
+import threading
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
-from web.auth import init_auth, require_auth, get_user_id, get_current_user, is_dev_mode
+from web.auth import init_auth, require_auth, require_login, get_user_id, get_current_user, is_dev_mode
 
-_player = None
-_library = None
-_scheduler = None
 _agent_runner = None
+_seeding = False
 
 
 def _load_config() -> dict:
@@ -18,11 +17,8 @@ def _load_config() -> dict:
         return {}
 
 
-def create_app(player, library, scheduler, agent_runner=None):
-    global _player, _library, _scheduler, _agent_runner
-    _player = player
-    _library = library
-    _scheduler = scheduler
+def create_app(agent_runner=None):
+    global _agent_runner
     _agent_runner = agent_runner
 
     app = Flask(
@@ -62,6 +58,7 @@ def create_app(player, library, scheduler, agent_runner=None):
     def plan():
         from audio.music_gen import list_generated_music, get_preset_prompts
         from db.sessions import get_pending_review, get_recent_sessions, get_sleep_stats
+        from db.users import get_user
 
         user = get_current_user()
         uid = get_user_id()
@@ -73,6 +70,28 @@ def create_app(player, library, scheduler, agent_runner=None):
         else:
             greeting = "Good evening"
 
+        tracks = list_generated_music()
+
+        global _seeding
+        if len(tracks) < 5 and not _seeding and os.environ.get("GOOGLE_API_KEY"):
+            _seeding = True
+            def _seed_bg():
+                global _seeding
+                try:
+                    from audio.music_gen import seed_n_tracks
+                    seed_n_tracks(5 - len(tracks))
+                finally:
+                    _seeding = False
+            threading.Thread(target=_seed_bg, daemon=True).start()
+
+        db_user = get_user(uid)
+        prefs = (db_user or {}).get("preferences", {})
+        persona = prefs.get("persona")
+        tracking_level = prefs.get("tracking_level", "basic")
+
+        from db.tiers import get_user_tier
+        user_tier = get_user_tier(uid)
+
         return render_template(
             "plan.html",
             greeting=greeting,
@@ -80,9 +99,13 @@ def create_app(player, library, scheduler, agent_runner=None):
             stats=get_sleep_stats(uid),
             pending_review=get_pending_review(uid),
             recent_sessions=get_recent_sessions(uid, limit=5),
-            tracks=list_generated_music(),
+            tracks=tracks,
             presets=get_preset_prompts(),
             has_agent=bool(os.environ.get("GOOGLE_API_KEY")),
+            seeding=_seeding,
+            persona=persona,
+            tracking_level=tracking_level,
+            user_tier=user_tier,
         )
 
     @app.route("/media/music/<path:filename>")
@@ -90,52 +113,7 @@ def create_app(player, library, scheduler, agent_runner=None):
         music_dir = os.path.abspath("data/music")
         return send_from_directory(music_dir, filename)
 
-    @app.route("/api/status")
-    def api_status():
-        state = _player.state
-        return jsonify({
-            "is_playing": state.is_playing,
-            "filepath": state.filepath,
-            "volume": state.volume,
-            "sound_name": os.path.splitext(os.path.basename(state.filepath))[0] if state.filepath else "",
-        })
-
-    @app.route("/api/sounds")
-    def api_sounds():
-        return jsonify(_library.list_sounds())
-
-    @app.route("/api/play", methods=["POST"])
-    @require_auth
-    def api_play():
-        data = request.get_json(force=True)
-        sound_type = data.get("sound_type", "brown_noise")
-        duration = data.get("duration_minutes", 30)
-        volume = data.get("volume")
-        filepath = _library.get_sound(sound_type, duration)
-        if not filepath:
-            return jsonify({"error": f"Unknown sound type: {sound_type}"}), 400
-        result = _player.play(filepath, volume=volume)
-        return jsonify(result)
-
-    @app.route("/api/stop", methods=["POST"])
-    @require_auth
-    def api_stop():
-        return jsonify(_player.stop())
-
-    @app.route("/api/volume", methods=["POST"])
-    @require_auth
-    def api_volume():
-        data = request.get_json(force=True)
-        level = data.get("volume", 40)
-        return jsonify(_player.set_volume(int(level)))
-
-    @app.route("/api/fade", methods=["POST"])
-    @require_auth
-    def api_fade():
-        data = request.get_json(force=True)
-        target = data.get("target", 0)
-        seconds = data.get("seconds", 900)
-        return jsonify(_player.fade_to(int(target), int(seconds)))
+    # ───── Chat ─────
 
     @app.route("/api/chat", methods=["POST"])
     @require_auth
@@ -149,67 +127,28 @@ def create_app(player, library, scheduler, agent_runner=None):
             return jsonify({"response": response})
         return jsonify({"response": "Agent not configured. Set GOOGLE_API_KEY to enable."})
 
-    @app.route("/api/profiles", methods=["GET"])
-    def api_profiles():
-        return jsonify(_load_profiles())
-
-    @app.route("/api/profiles", methods=["POST"])
-    @require_auth
-    def api_profiles_update():
-        data = request.get_json(force=True)
-        profiles = _load_profiles()
-        name = data.get("name", "").strip()
-        if not name:
-            return jsonify({"error": "Name required"}), 400
-        profiles[name] = {
-            "name": name,
-            "preferred_sounds": data.get("preferred_sounds", ["brown_noise"]),
-            "bedtime": data.get("bedtime", "20:00"),
-            "max_volume": min(data.get("max_volume", 60), _player.max_volume),
-            "fade_minutes": data.get("fade_minutes", 15),
-        }
-        _save_profiles(profiles)
-        return jsonify({"saved": name})
-
-    @app.route("/api/profiles/<name>", methods=["DELETE"])
-    @require_auth
-    def api_profiles_delete(name):
-        profiles = _load_profiles()
-        if name in profiles:
-            del profiles[name]
-            _save_profiles(profiles)
-            return jsonify({"deleted": name})
-        return jsonify({"error": "Not found"}), 404
-
-    @app.route("/api/schedules", methods=["POST"])
-    @require_auth
-    def api_schedules_create():
-        from audio.scheduler import ScheduledRoutine
-        data = request.get_json(force=True)
-        routine = ScheduledRoutine(
-            profile_name=data.get("profile_name", "default"),
-            sound_type=data.get("sound_type", "brown_noise"),
-            start_time=data.get("start_time", "20:00"),
-            duration_minutes=data.get("duration_minutes", 30),
-            fade_out_minutes=data.get("fade_out_minutes", 15),
-            volume=data.get("volume", 40),
-            recurring=data.get("recurring", False),
-        )
-        return jsonify(_scheduler.schedule(routine))
-
-    @app.route("/api/schedules/<routine_id>", methods=["DELETE"])
-    @require_auth
-    def api_schedules_delete(routine_id):
-        return jsonify(_scheduler.cancel(routine_id))
+    # ───── Music Routes ─────
 
     @app.route("/api/music/generate", methods=["POST"])
-    @require_auth
+    @require_login
     def api_music_generate():
         from audio.music_gen import generate_music
+        from db.tiers import check_generation_allowance, consume_generation
+        uid = get_user_id()
+
+        allowed, reason = check_generation_allowance(uid)
+        if not allowed:
+            return jsonify({"error": reason}), 403
+
         data = request.get_json(force=True)
         prompt = data.get("prompt", "ambient sleep music")
         title = data.get("title", "")
-        return jsonify(generate_music(prompt, title=title, user_id=get_user_id()))
+        result = generate_music(prompt, title=title, user_id=uid)
+
+        if "error" not in result and not result.get("cached"):
+            consume_generation(uid)
+
+        return jsonify(result)
 
     @app.route("/api/music/library")
     def api_music_library():
@@ -254,6 +193,13 @@ def create_app(player, library, scheduler, agent_runner=None):
         existing = [t["title"] for t in list_generated_music()]
         return jsonify(suggest_prompts(existing))
 
+    @app.route("/api/music/seed", methods=["POST"])
+    @require_auth
+    def api_music_seed():
+        from audio.music_gen import seed_library
+        result = seed_library()
+        return jsonify(result)
+
     @app.route("/api/music/suggest-variation", methods=["POST"])
     def api_music_suggest_variation():
         from audio.music_gen import suggest_variation
@@ -271,11 +217,13 @@ def create_app(player, library, scheduler, agent_runner=None):
         session_id = request.args.get("session", "")
         track_src = request.args.get("track", "")
         track_title = request.args.get("title", "")
+        playlist_id = request.args.get("playlist", "")
         return render_template(
             "sleep.html",
             session_id=session_id,
             track_src=track_src,
             track_title=track_title,
+            playlist_id=playlist_id,
         )
 
     @app.route("/review")
@@ -344,19 +292,39 @@ def create_app(player, library, scheduler, agent_runner=None):
     @require_auth
     def api_sleep_plan():
         from db.sessions import create_session
+        from db.users import get_persona
         data = request.get_json(force=True)
         uid = get_user_id()
+        mood = data.get("mood", "calm")
         plan = {
             "soundscape_id": data.get("soundscape_id"),
             "soundscape_title": data.get("soundscape_title"),
             "soundscape_src": data.get("soundscape_src"),
             "duration_target_hours": data.get("duration_hours", 7.5),
             "wind_down": data.get("wind_down", ""),
-            "mood": data.get("mood", "calm"),
+            "mood": mood,
         }
-        session_id = create_session(uid, plan)
+
+        playlist_data = None
+        playlist_id = None
+        if data.get("use_playlist", True):
+            from audio.playlist import build_playlist
+            persona = get_persona(uid)
+            playlist_data = build_playlist(mood, persona, uid)
+            if playlist_data:
+                playlist_id = playlist_data.get("playlist_id")
+                if playlist_data["tracks"]:
+                    first = playlist_data["tracks"][0]
+                    plan["soundscape_id"] = first.get("track_id")
+                    plan["soundscape_title"] = first.get("title")
+                    plan["soundscape_src"] = first.get("src")
+
+        session_id = create_session(uid, plan, playlist_id=playlist_id)
         if session_id:
-            return jsonify({"session_id": session_id})
+            resp = {"session_id": session_id}
+            if playlist_data:
+                resp["playlist"] = playlist_data
+            return jsonify(resp)
         return jsonify({"session_id": None, "status": "ok"})
 
     @app.route("/api/sleep/start", methods=["POST"])
@@ -396,8 +364,15 @@ def create_app(player, library, scheduler, agent_runner=None):
         else:
             rating = int(data.get("rating", 3))
             notes = data.get("notes", "")
-            review_session(sid, rating, notes)
+            metrics = data.get("metrics", {})
+            review_session(sid, rating=rating, notes=notes, metrics=metrics)
         return jsonify({"status": "ok"})
+
+    @app.route("/api/sleep/review-schema")
+    @require_auth
+    def api_sleep_review_schema():
+        from db.sessions import VALID_REVIEW_METRICS
+        return jsonify({"metrics": VALID_REVIEW_METRICS})
 
     @app.route("/api/sleep/current")
     @require_auth
@@ -416,14 +391,43 @@ def create_app(player, library, scheduler, agent_runner=None):
             "stats": get_sleep_stats(uid),
         })
 
+    # ───── Calendar / Journal ─────
+
+    @app.route("/api/sleep/calendar")
+    @require_auth
+    def api_sleep_calendar():
+        from db.sessions import get_sessions_for_month
+        uid = get_user_id()
+        year = request.args.get("year", datetime.now().year, type=int)
+        month = request.args.get("month", datetime.now().month, type=int)
+        sessions = get_sessions_for_month(uid, year, month)
+        return jsonify({"year": year, "month": month, "sessions": sessions})
+
+    @app.route("/api/sleep/factors", methods=["POST"])
+    @require_auth
+    def api_sleep_factors():
+        from db.sessions import update_session_factors
+        data = request.get_json(force=True)
+        sid = data.get("session_id")
+        factors = data.get("factors", [])
+        if not sid:
+            return jsonify({"error": "session_id required"}), 400
+        if update_session_factors(sid, factors):
+            return jsonify({"status": "ok"})
+        return jsonify({"error": "Could not update"}), 400
+
     # ───── Scene Routes ─────
 
     @app.route("/api/scenes/cosmos")
     def api_scenes_cosmos():
+        from web.scenes import get_apod_collection
+        images = get_apod_collection(count=20)
+        if images:
+            return jsonify({"images": images})
         from web.scenes import get_apod
-        result = get_apod()
-        if result:
-            return jsonify(result)
+        single = get_apod()
+        if single:
+            return jsonify({"images": [{"url": single["url"], "title": single.get("title", "")}]})
         return jsonify({"error": "No APOD available"}), 404
 
     @app.route("/api/scenes/scenic")
@@ -448,6 +452,8 @@ def create_app(player, library, scheduler, agent_runner=None):
                 return send_from_directory(os.path.join(scenes_dir, theme_dir), filename)
         return "Not found", 404
 
+    # ───── User Preferences ─────
+
     @app.route("/api/user/preferences", methods=["GET"])
     @require_auth
     def api_user_prefs_get():
@@ -465,18 +471,63 @@ def create_app(player, library, scheduler, agent_runner=None):
         update_preferences(get_user_id(), data)
         return jsonify({"status": "ok"})
 
+    # ───── Tier / Credits / Packs ─────
+
+    @app.route("/api/user/tier")
+    @require_auth
+    def api_user_tier():
+        from db.tiers import get_user_tier
+        return jsonify(get_user_tier(get_user_id()))
+
+    @app.route("/api/user/credits/add", methods=["POST"])
+    @require_auth
+    def api_user_credits_add():
+        from db.tiers import add_credits
+        data = request.get_json(force=True)
+        amount = int(data.get("amount", 0))
+        if amount <= 0:
+            return jsonify({"error": "Invalid amount"}), 400
+        balance = add_credits(get_user_id(), amount)
+        return jsonify({"balance": balance, "added": amount})
+
+    @app.route("/api/user/set-admin", methods=["POST"])
+    @require_auth
+    def api_user_set_admin():
+        from db.tiers import set_admin
+        set_admin(get_user_id())
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/packs")
+    def api_packs():
+        from db.packs import get_all_packs
+        return jsonify(get_all_packs())
+
+    @app.route("/api/packs/<slug>/purchase", methods=["POST"])
+    @require_auth
+    def api_pack_purchase(slug):
+        from db.packs import purchase_pack
+        result = purchase_pack(get_user_id(), slug)
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify(result)
+
+    # ───── Playlist ─────
+
+    @app.route("/api/playlist/<playlist_id>")
+    @require_auth
+    def api_playlist_get(playlist_id):
+        from audio.playlist import get_playlist
+        pl = get_playlist(playlist_id)
+        if not pl:
+            return jsonify({"error": "Playlist not found"}), 404
+        return jsonify(pl)
+
+    @app.route("/api/playlist/<playlist_id>/progress", methods=["POST"])
+    @require_auth
+    def api_playlist_progress(playlist_id):
+        from audio.playlist import update_playlist_progress
+        data = request.get_json(force=True)
+        update_playlist_progress(playlist_id, data.get("tracks_played", 0))
+        return jsonify({"status": "ok"})
+
     return app
-
-
-def _load_profiles() -> dict:
-    path = os.path.join("data", "profiles.json")
-    if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
-    return {}
-
-
-def _save_profiles(profiles: dict):
-    os.makedirs("data", exist_ok=True)
-    with open(os.path.join("data", "profiles.json"), "w") as f:
-        json.dump(profiles, f, indent=2)
