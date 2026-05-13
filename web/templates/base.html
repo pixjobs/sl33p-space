@@ -23,7 +23,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% block styles %}{% endblock %}
 </head>
-<body>
+<body data-tracking-level="{{ tracking_level|default('basic') }}">
   <nav class="nav">
     <a href="/" class="nav-brand">sl33p-space</a>
     <div class="nav-user" id="nav-user">

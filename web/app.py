@@ -58,6 +58,7 @@ def create_app(agent_runner=None):
     def plan():
         from audio.music_gen import list_generated_music, get_preset_prompts
         from db.sessions import get_pending_review, get_recent_sessions, get_sleep_stats
+        from db.insights import get_user_sleep_insights
         from db.users import get_user
 
         user = get_current_user()
@@ -91,6 +92,7 @@ def create_app(agent_runner=None):
 
         from db.tiers import get_user_tier
         user_tier = get_user_tier(uid)
+        insights = get_user_sleep_insights(uid)
 
         return render_template(
             "plan.html",
@@ -106,6 +108,7 @@ def create_app(agent_runner=None):
             persona=persona,
             tracking_level=tracking_level,
             user_tier=user_tier,
+            insights=insights,
         )
 
     @app.route("/media/music/<path:filename>")
@@ -390,6 +393,14 @@ def create_app(agent_runner=None):
             "sessions": get_recent_sessions(uid),
             "stats": get_sleep_stats(uid),
         })
+
+    @app.route("/api/sleep/insights")
+    @require_auth
+    def api_sleep_insights():
+        from db.insights import get_user_sleep_insights
+        days = request.args.get("days", 30, type=int)
+        days = max(7, min(days, 180))
+        return jsonify(get_user_sleep_insights(get_user_id(), days=days))
 
     # ───── Calendar / Journal ─────
 

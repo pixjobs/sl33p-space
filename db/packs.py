@@ -4,7 +4,11 @@ Music packs — curated bundles of tracks users can purchase with credits.
 
 from datetime import datetime, timezone
 
-from bson import ObjectId
+try:
+    from bson import ObjectId
+except ImportError:  # Allows dev/demo mode without pymongo installed.
+    class ObjectId(str):
+        pass
 
 from db import get_db
 

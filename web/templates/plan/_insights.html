@@ -1,0 +1,35 @@
+<section class="bg-surface border border-brand/10 rounded-2xl overflow-hidden">
+  <div class="px-5 py-4">
+    <div class="flex items-center gap-2 mb-2">
+      <span class="w-2 h-2 rounded-full {% if insights and insights.available %}bg-emerald-400{% else %}bg-amber-400{% endif %}" style="animation:seed-pulse 2s ease-in-out infinite"></span>
+      <span class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">MongoDB sleep memory</span>
+    </div>
+
+    <p class="text-sm text-white/70 leading-relaxed mb-3">
+      {{ insights.summary if insights else 'Connect MongoDB to turn reviews into recommendations.' }}
+    </p>
+
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      <div class="rounded-xl border border-border bg-black/10 p-3">
+        <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1">Best track</div>
+        <div class="text-xs text-white/70 truncate">
+          {% if insights and insights.best_track %}
+            {{ insights.best_track.title }}{% if insights.best_track.avg_rating %} · {{ insights.best_track.avg_rating }}/5{% endif %}
+          {% else %}
+            Learning
+          {% endif %}
+        </div>
+      </div>
+      <div class="rounded-xl border border-border bg-black/10 p-3">
+        <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1">Recommended mood</div>
+        <div class="text-xs text-white/70 truncate">{{ insights.recommended_mood|title if insights else 'Calm' }}</div>
+      </div>
+    </div>
+
+    <ol class="text-xs text-white/35 space-y-1 list-decimal list-inside">
+      <li>Pick tonight's mood.</li>
+      <li>Start a MongoDB-tracked sleep session.</li>
+      <li>Review it tomorrow so the agent can improve the next playlist.</li>
+    </ol>
+  </div>
+</section>

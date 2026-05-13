@@ -52,6 +52,15 @@ python run.py
 # Open http://localhost:8090
 ```
 
+
+## Product flow
+
+1. **Open the plan page** — Firebase/dev-mode identifies the user and the app loads MongoDB-backed sleep stats, pending reviews, recent sessions, track library, persona, tier, and generated music.
+2. **Review last night** — A pending review updates `sleep_sessions.review`, giving MongoDB fresh signal for ratings, factors, and duration.
+3. **Pick tonight's mood** — The plan page preselects the MongoDB-recommended mood when history exists, then sorts tracks by matching mood tags.
+4. **Start sleep** — The app creates a MongoDB `sleep_sessions` document and, when possible, a mood/persona-aware playlist before sending the user to the immersive sleep view.
+5. **Agent learns** — Gemini/ADK uses `get_mongodb_sleep_insights` plus MongoDB MCP tools to explain recommendations with actual track, mood, and factor patterns.
+
 ## Environment variables
 
 | Variable | Required | Description |

@@ -269,6 +269,16 @@ function setPreviewVol(val) {
   });
 })();
 
+
+// Select the MongoDB-recommended mood once the plan card is present.
+(function() {
+  var card = document.getElementById('plan-card');
+  if (!card) return;
+  var mood = card.dataset.recommendedMood || 'calm';
+  var btn = document.querySelector('.mood-btn[data-mood="' + mood + '"]') || document.querySelector('.mood-btn[data-mood="calm"]');
+  if (btn) pickMood(btn);
+})();
+
 // ───── Start sleep ─────
 function _resolveTrack() {
   if (_plan.track) return _plan.track;

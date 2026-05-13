@@ -75,6 +75,19 @@ def get_sleep_history(limit: int = 7) -> dict:
     return {"recent_sessions": formatted, "stats": stats}
 
 
+def get_mongodb_sleep_insights(days: int = 30) -> dict:
+    """Analyze the current user's MongoDB sleep history.
+
+    Args:
+        days: Lookback window in days for sessions, ratings, tracks, and factors.
+
+    Returns:
+        MongoDB-backed insights including best tracks, mood patterns, factor correlations, and recommendation summary.
+    """
+    from db.insights import get_user_sleep_insights
+    return get_user_sleep_insights(_current_user_id, days=days)
+
+
 def recommend_sleep_plan(mood: str = "calm") -> dict:
     """Recommend a sleep plan with a mood-aware playlist.
 
@@ -92,6 +105,9 @@ def recommend_sleep_plan(mood: str = "calm") -> dict:
     tracks = list_generated_music()
     stats = get_sleep_stats(_current_user_id)
     persona = get_persona(_current_user_id)
+    insights = get_mongodb_sleep_insights()
+    if mood == "calm" and insights.get("recommended_mood"):
+        mood = insights["recommended_mood"]
 
     playlist_data = build_playlist(mood, persona, _current_user_id)
     playlist_tracks = []
@@ -117,6 +133,7 @@ def recommend_sleep_plan(mood: str = "calm") -> dict:
         "top_sound": stats.get("top_sound") or best_rated,
         "mood": mood,
         "persona": persona,
+        "mongodb_insights": insights,
     }
 
 
@@ -269,6 +286,7 @@ def log_factors(session_id: str, factors: str) -> dict:
 
 ROOT_TOOLS = [
     get_sleep_history,
+    get_mongodb_sleep_insights,
     recommend_sleep_plan,
     start_sleep_session,
     generate_music_track,
@@ -331,7 +349,6 @@ def make_chat_handler(config: dict = None):
     _sessions: dict[str, str] = {}
 
     def handle(message: str, user_id: str = "default") -> str:
-        global _current_user_id
         _current_user_id = user_id
 
         prompt = _build_prompt(user_id)
@@ -377,28 +394,40 @@ def make_chat_handler(config: dict = None):
 
 def _fallback_handler(message: str, user_id: str = "default") -> str:
     """Simple keyword-based handler when ADK is not available."""
+    global _current_user_id
     msg = message.lower().strip()
 
     if any(w in msg for w in ["history", "how have i", "how did i"]):
-        global _current_user_id
         _current_user_id = user_id
-        data = get_sleep_history()
-        if data["stats"].get("total_sessions", 0) > 0:
-            return (f"You've had {data['stats']['total_sessions']} sessions "
-                    f"with an average rating of {data['stats']['avg_rating'] or '?'}/5.")
-        return "No sleep sessions yet. Start your first one!"
+        insights = get_mongodb_sleep_insights()
+        if insights.get("available") and insights["stats"].get("reviewed_sessions", 0) > 0:
+            best = insights.get("best_track") or {}
+            extra = f" Best track: {best.get('title')}." if best.get("title") else ""
+            return (f"MongoDB has {insights['stats']['reviewed_sessions']} reviewed sessions "
+                    f"with an average rating of {insights['stats'].get('avg_rating') or '?'}/5.{extra}")
+        return insights.get("summary") or "No sleep sessions yet. Start your first one!"
 
     if any(w in msg for w in ["persona", "profile", "who am i"]):
         return ("I can adapt to your sleep style. Choose a persona on the plan page: "
                 "Shift Worker, Emergency Services, Shallow Sleeper, or Insomniac.")
 
+    if any(w in msg for w in ["recommend", "opened", "listen", "tonight"]):
+        _current_user_id = user_id
+        insights = get_mongodb_sleep_insights()
+        best = insights.get("best_track") or {}
+        if best.get("title"):
+            return (f"Tonight I'd start with {best['title']} because MongoDB shows it has "
+                    f"your strongest recent rating ({best.get('avg_rating') or '?'} / 5). "
+                    "Pick your mood and press Start Sleep to log another session.")
+        return insights.get("summary") or "Pick your mood and press Start Sleep to begin learning your pattern."
+
     if any(w in msg for w in ["sleep", "start", "ready", "tired", "bed"]):
-        return ("Ready to sleep? Pick a track and hit Start Sleep. "
-                "Set GOOGLE_API_KEY for personalized recommendations.")
+        return ("Ready to sleep? Pick tonight's mood and hit Start Sleep. "
+                "The session will be stored in MongoDB so tomorrow's review can improve the next playlist.")
 
     if any(w in msg for w in ["help", "what can"]):
-        return ("I'm your sleep buddy. I can recommend tracks, start sessions, "
-                "and learn your patterns. Set GOOGLE_API_KEY for full Gemini support.")
+        return ("I'm your sleep coach. I can summarize MongoDB sleep history, recommend tracks, "
+                "start sessions, and learn from tomorrow's review. Add GOOGLE_API_KEY for Gemini reasoning.")
 
-    return ("I can help you sleep better. Try 'start sleep', 'history', or 'help'. "
-            "Set GOOGLE_API_KEY for full natural language support.")
+    return ("I can help you sleep better. Try 'history', 'recommend tonight', or 'start sleep'. "
+            "Add GOOGLE_API_KEY for full Gemini-powered coaching.")

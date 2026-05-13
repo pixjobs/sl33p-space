@@ -1,15 +1,15 @@
-{% if has_agent %}
 <section class="bg-surface border border-brand/10 rounded-2xl overflow-hidden" id="agent-section">
   <div class="px-5 py-4">
     <div class="flex items-center gap-2 mb-3">
       <span class="w-2 h-2 rounded-full bg-emerald-400" style="animation:seed-pulse 2s ease-in-out infinite"></span>
-      <span class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Sleep Coach</span>
+      <span class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Sleep Coach{% if not has_agent %} · MongoDB fallback{% endif %}</span>
     </div>
-    <div class="chat-messages max-h-[250px]" id="chat-messages"></div>
+    <div class="chat-messages max-h-[250px]" id="chat-messages">
+      {% if not has_agent %}<div class="msg msg-agent">Gemini is not configured here, but I can still summarize MongoDB sleep history when available. Try “history”.</div>{% endif %}
+    </div>
     <form class="flex gap-2" onsubmit="sendChat(event)">
       <input type="text" id="chat-input" class="flex-1 px-3.5 py-2.5 bg-black/20 border border-border rounded-xl text-white text-sm focus:outline-none focus:border-brand/40 placeholder:text-white/25" placeholder="Ask your sleep coach..." autocomplete="off">
       <button type="submit" class="btn btn-primary btn-sm rounded-xl">Send</button>
     </form>
   </div>
 </section>
-{% endif %}
