@@ -1,0 +1,60 @@
+<section class="bg-surface border border-border rounded-2xl overflow-hidden backdrop-blur-xl">
+  <!-- Mood -->
+  <div class="px-5 py-4 border-b border-border">
+    <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25 mb-3">Mood</div>
+    <div class="flex gap-2 flex-wrap">
+      <button class="mood-btn flex items-center gap-1.5 px-3.5 py-2 bg-transparent border border-border rounded-full text-white/50 text-xs cursor-pointer transition-all hover:border-amber-500/30 hover:text-amber-300" data-mood="wired" onclick="pickMood(this)"><span class="text-[0.7rem]">&#9889;</span> Wired</button>
+      <button class="mood-btn flex items-center gap-1.5 px-3.5 py-2 bg-transparent border border-border rounded-full text-white/50 text-xs cursor-pointer transition-all hover:border-red-400/30 hover:text-red-300" data-mood="stressed" onclick="pickMood(this)"><span class="text-[0.7rem]">&#128168;</span> Stressed</button>
+      <button class="mood-btn flex items-center gap-1.5 px-3.5 py-2 bg-transparent border border-border rounded-full text-white/50 text-xs cursor-pointer transition-all hover:border-violet-400/30 hover:text-violet-300" data-mood="restless" onclick="pickMood(this)"><span class="text-[0.7rem]">&#127744;</span> Restless</button>
+      <button class="mood-btn flex items-center gap-1.5 px-3.5 py-2 bg-transparent border border-border rounded-full text-white/50 text-xs cursor-pointer transition-all hover:border-blue-400/30 hover:text-blue-300" data-mood="tired" onclick="pickMood(this)"><span class="text-[0.7rem]">&#128164;</span> Tired</button>
+      <button class="mood-btn flex items-center gap-1.5 px-3.5 py-2 bg-transparent border border-border rounded-full text-white/50 text-xs cursor-pointer transition-all hover:border-emerald-400/30 hover:text-emerald-300" data-mood="calm" onclick="pickMood(this)"><span class="text-[0.7rem]">&#127808;</span> Calm</button>
+    </div>
+  </div>
+
+  <!-- Track picker -->
+  <div class="px-5 py-4 border-b border-border">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Soundscape</div>
+      {% if tracks %}<span class="text-[0.55rem] text-white/20">{{ tracks | length }} tracks</span>{% endif %}
+    </div>
+    <div class="flex gap-2.5 overflow-x-auto pb-2" id="track-strip">
+      {% if tracks %}
+        {% for track in tracks %}
+        <button class="track-chip shrink-0 px-4 py-3 bg-transparent border border-border rounded-xl cursor-pointer transition-all min-w-[130px] text-left hover:border-border-hover hover:bg-surface-hover group" data-id="{{ track.id }}" data-src="{{ track.src or ('/media/music/' + track.filename) }}" data-title="{{ track.title }}" data-mood-tags="{{ track.mood_tags | join(',') }}" data-energy="{{ track.energy_level or 'low' }}" onclick="pickTrack(this)">
+          <div class="flex items-center gap-1.5 mb-1">
+            <span class="energy-dot e-{{ track.energy_level or 'low' }}"></span>
+            <span class="text-[0.55rem] text-white/25 uppercase tracking-wider">{{ track.energy_level or 'low' }}</span>
+          </div>
+          <span class="block text-[0.8rem] font-medium text-white/80 group-hover:text-white truncate">{{ track.title }}</span>
+          {% if track.mood_tags %}
+          <span class="block text-[0.55rem] text-white/20 mt-1">{{ track.mood_tags | join(' · ') }}</span>
+          {% endif %}
+        </button>
+        {% endfor %}
+      {% else %}
+        <span class="text-xs text-white/30 py-2">No tracks yet &mdash; generating library...</span>
+      {% endif %}
+    </div>
+    {% if seeding or (tracks | length) < 5 %}
+    <div class="flex items-center gap-1.5 text-[0.6rem] text-white/25 pt-1" id="track-seeding">
+      <span class="w-1.5 h-1.5 rounded-full bg-brand" style="animation:seed-pulse 1.5s ease-in-out infinite"></span>
+      Building your library...
+    </div>
+    {% endif %}
+
+    <!-- Inline preview player -->
+    <div class="track-preview hidden items-center gap-3 mt-3 pt-3 border-t border-border" id="track-preview">
+      <button class="w-9 h-9 rounded-full border border-border bg-surface text-white flex items-center justify-center cursor-pointer transition-all shrink-0 hover:border-brand hover:bg-brand-soft hover:scale-105" id="preview-btn" onclick="togglePreview()">
+        <svg id="preview-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+      <span class="text-sm text-white/80 flex-1 font-medium" id="preview-title"></span>
+      <input type="range" class="w-[60px] h-[3px]" id="preview-vol" min="0" max="100" value="70" oninput="setPreviewVol(this.value)">
+    </div>
+    <audio id="preview-audio" preload="none"></audio>
+  </div>
+
+  <!-- Start -->
+  <div class="p-5">
+    <button class="w-full py-4 rounded-xl text-sm font-semibold cursor-pointer transition-all border-0" id="btn-start" onclick="startSleep()">Start Sleep</button>
+  </div>
+</section>

@@ -1,0 +1,26 @@
+{% if stats and stats.total_sessions > 0 %}
+<div class="flex items-center gap-4 px-1">
+  <div class="flex items-center gap-1.5">
+    <span class="text-sm font-semibold text-brand">{{ stats.total_sessions }}</span>
+    <span class="text-[0.55rem] uppercase tracking-wider text-white/25">sessions</span>
+  </div>
+  {% if stats.avg_rating %}
+  <div class="flex items-center gap-1.5">
+    <span class="text-sm font-semibold text-brand">{{ stats.avg_rating }}</span>
+    <span class="text-[0.55rem] uppercase tracking-wider text-white/25">avg</span>
+  </div>
+  {% endif %}
+  {% if stats.avg_duration %}
+  <div class="flex items-center gap-1.5">
+    <span class="text-sm font-semibold text-white/60">{{ stats.avg_duration }}m</span>
+    <span class="text-[0.55rem] uppercase tracking-wider text-white/25">avg dur</span>
+  </div>
+  {% endif %}
+  {% if stats.top_sound %}
+  <div class="flex items-center gap-1.5 ml-auto">
+    <span class="text-[0.55rem] text-white/25">Top:</span>
+    <span class="text-[0.65rem] text-white/40">{{ stats.top_sound }}</span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}

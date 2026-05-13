@@ -1,0 +1,11 @@
+{% if recent_sessions %}
+<div class="flex items-center gap-2 flex-wrap">
+  <span class="text-[0.55rem] font-semibold uppercase tracking-[2px] text-white/20">Recent</span>
+  {% for s in recent_sessions[:3] %}
+  <span class="recent-chip">
+    {{ s.plan.soundscape_title or 'Session' }}
+    {% if s.review and s.review.rating %}<span class="chip-score">{{ s.review.rating }}/5</span>{% endif %}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}

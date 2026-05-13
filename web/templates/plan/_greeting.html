@@ -1,0 +1,29 @@
+<div>
+  <div class="flex items-center gap-2 mb-1">
+    <h1 class="text-xl font-semibold">{{ greeting }}, {{ user_name }}</h1>
+    {% if user_tier %}
+      {% if user_tier.type == 'admin' %}
+        <span class="px-2 py-0.5 rounded-full bg-brand-soft border border-brand/30 text-brand text-[0.55rem] font-semibold uppercase tracking-wider">Admin</span>
+      {% elif user_tier.type == 'subscriber' %}
+        <span class="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[0.55rem] font-semibold uppercase tracking-wider">Pro</span>
+      {% elif user_tier.type == 'trial' %}
+        <span class="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-400 text-[0.55rem] font-semibold uppercase tracking-wider">Trial &middot; {{ user_tier.trial_days_remaining or 0 }}d</span>
+      {% endif %}
+    {% endif %}
+  </div>
+  <div class="flex items-center gap-3 text-xs text-white/30 mb-3">
+    {% if user_tier and user_tier.type == 'subscriber' %}
+      <span>{{ user_tier.generations_remaining or 0 }} generations left</span>
+    {% endif %}
+    {% if user_tier and user_tier.credits_balance and user_tier.credits_balance > 0 %}
+      <span>{{ user_tier.credits_balance }} credits</span>
+    {% endif %}
+  </div>
+  <div class="flex gap-1.5 flex-wrap" id="persona-row">
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if not persona %} active{% endif %}" data-persona="" onclick="setPersona(this)">Default</button>
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'shift_worker' %} active{% endif %}" data-persona="shift_worker" onclick="setPersona(this)">&#9203; Shift</button>
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'emergency_services' %} active{% endif %}" data-persona="emergency_services" onclick="setPersona(this)">&#9977; First Responder</button>
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'shallow_sleeper' %} active{% endif %}" data-persona="shallow_sleeper" onclick="setPersona(this)">&#127769; Light Sleeper</button>
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'insomniac' %} active{% endif %}" data-persona="insomniac" onclick="setPersona(this)">&#9789; Insomniac</button>
+  </div>
+</div>
