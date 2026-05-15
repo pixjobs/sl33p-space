@@ -100,45 +100,75 @@ def _save_index(index: dict):
 
 
 TARGET_DURATION_MINUTES = 8
-CROSSFADE_MS = 3000
+CROSSFADE_MS = 4000
 MAX_TRACKS_PER_USER = 10
 MAX_TRACKS_TOTAL = 50
 
+_VARIATION_HINTS = [
+    "Slightly deeper, more sub-bass presence, slower evolution.",
+    "More spacious, wider stereo field, gentle shimmer.",
+    "Warmer tones, softer attack, like drifting deeper into sleep.",
+    "Darker, more mysterious, with distant resonant echoes.",
+    "Quieter, more minimal, like the stillness before dawn.",
+    "Richer harmonics, layered overtones, slowly breathing texture.",
+]
 
-def _loop_with_crossfade(filepath: str, target_minutes: int = TARGET_DURATION_MINUTES,
-                         crossfade_ms: int = CROSSFADE_MS) -> str:
+
+def _stitch_clips(clip_paths: list[str], filepath: str,
+                  target_minutes: int = TARGET_DURATION_MINUTES,
+                  crossfade_ms: int = CROSSFADE_MS) -> str:
+    """Stitch multiple unique clips into one long track with crossfades."""
     try:
         from pydub import AudioSegment
     except ImportError:
+        return clip_paths[0] if clip_paths else filepath
+
+    clips = []
+    for p in clip_paths:
+        try:
+            clips.append(AudioSegment.from_file(p))
+        except Exception:
+            continue
+
+    if not clips:
         return filepath
 
-    clip = AudioSegment.from_file(filepath)
-    clip_ms = len(clip)
-    if clip_ms < 1000:
+    if len(clips) == 1:
+        clip = clips[0]
+        if len(clip) < 1000:
+            return filepath
+        target_ms = target_minutes * 60 * 1000
+        if len(clip) >= target_ms:
+            clip[:target_ms].export(filepath, format="ogg", codec="libopus",
+                                    parameters=["-b:a", "128k"])
+            return filepath
+        result = clip
+        while len(result) < target_ms:
+            result = result.append(clip, crossfade=min(crossfade_ms, len(clip) // 2))
+        result = result[:target_ms]
+        result = result.fade_in(5000).fade_out(5000)
+        result.export(filepath, format="ogg", codec="libopus",
+                      parameters=["-b:a", "128k"])
         return filepath
 
     target_ms = target_minutes * 60 * 1000
-    if clip_ms >= target_ms:
-        return filepath
+    result = clips[0]
+    clip_idx = 1
 
-    result = clip
     while len(result) < target_ms:
-        result = result.append(clip, crossfade=min(crossfade_ms, clip_ms // 2))
+        next_clip = clips[clip_idx % len(clips)]
+        xfade = min(crossfade_ms, len(next_clip) // 2, len(result) // 2)
+        result = result.append(next_clip, crossfade=max(xfade, 500))
+        clip_idx += 1
 
     result = result[:target_ms]
-
-    fade_ms = 5000
-    result = result.fade_in(fade_ms).fade_out(fade_ms)
+    result = result.fade_in(5000).fade_out(5000)
 
     base, ext = os.path.splitext(filepath)
-    extended_path = f"{base}_ext{ext}"
-    if ext == ".ogg":
-        result.export(extended_path, format="ogg", codec="libopus",
-                      parameters=["-b:a", "128k"])
-    else:
-        result.export(extended_path, format=ext.lstrip("."))
-
-    shutil.move(extended_path, filepath)
+    tmp_path = f"{base}_stitched{ext}"
+    result.export(tmp_path, format="ogg", codec="libopus",
+                  parameters=["-b:a", "128k"])
+    shutil.move(tmp_path, filepath)
     return filepath
 
 
@@ -299,7 +329,7 @@ def generate_music(prompt: str, title: str = "",
         gen_start = time.time()
         lyria_calls = 0
 
-        def _try_generate(content: str) -> bool:
+        def _try_generate(content: str, out_path: str) -> bool:
             nonlocal description, lyria_calls
             try:
                 resp = client.models.generate_content(
@@ -328,31 +358,54 @@ def generate_music(prompt: str, title: str = "",
                 if part.text is not None:
                     description = part.text
                 elif part.inline_data is not None and part.inline_data.data:
-                    with open(filepath, "wb") as f:
+                    with open(out_path, "wb") as f:
                         f.write(part.inline_data.data)
                     return True
             return False
 
-        prompts_to_try = [
+        # Generate first clip with retries
+        clip_path_0 = os.path.join(LOCAL_CACHE_DIR, f"{key}_c0.ogg")
+        first_prompts = [
             full_prompt,
             f"{_blend_with_preset(prompt)}\n\n{SLEEP_STYLE}",
             f"{random.choice(list(PRESET_PROMPTS.values()))}\n\n{SLEEP_STYLE}",
         ]
 
         audio_received = False
-        for i, attempt_prompt in enumerate(prompts_to_try):
+        for i, attempt_prompt in enumerate(first_prompts):
             if i > 0:
-                log.info("Lyria retry %d/%d", i, len(prompts_to_try) - 1)
-            audio_received = _try_generate(attempt_prompt)
+                log.info("Lyria retry %d/%d", i, len(first_prompts) - 1)
+            audio_received = _try_generate(attempt_prompt, clip_path_0)
             if audio_received:
                 break
 
-        if not audio_received or not os.path.exists(filepath):
-            log.error("All %d Lyria attempts failed for prompt: %s", len(prompts_to_try), prompt[:100])
+        if not audio_received:
+            log.error("All Lyria attempts failed for prompt: %s", prompt[:100])
             return {"error": "Music generation failed after multiple attempts. Please try again."}
 
+        # Generate additional unique clips with variation hints
         target_mins = cfg.get("target_duration_minutes", TARGET_DURATION_MINUTES)
-        _loop_with_crossfade(filepath, target_minutes=target_mins)
+        num_variations = max(target_mins // 3, 2)
+        hints = random.sample(_VARIATION_HINTS, min(num_variations, len(_VARIATION_HINTS)))
+
+        clip_paths = [clip_path_0]
+        for vi, hint in enumerate(hints):
+            vpath = os.path.join(LOCAL_CACHE_DIR, f"{key}_c{vi + 1}.ogg")
+            variation_prompt = f"{enriched} {hint}\n\n{SLEEP_STYLE}"
+            if _try_generate(variation_prompt, vpath):
+                clip_paths.append(vpath)
+            else:
+                log.info("Variation %d failed, continuing with %d clips", vi + 1, len(clip_paths))
+
+        log.info("Stitching %d unique clips into %d-minute track", len(clip_paths), target_mins)
+        _stitch_clips(clip_paths, filepath, target_minutes=target_mins)
+
+        # Clean up individual clip files
+        for cp in clip_paths:
+            try:
+                os.remove(cp)
+            except OSError:
+                pass
 
         # Mood tagging
         mood_data = tag_track_moods(prompt)
