@@ -362,7 +362,7 @@ async function submitManualLog() {
 async function generateTrack() {
   var prompt = document.getElementById('lab-prompt').value.trim();
   if (!prompt) { showToast('Describe a soundscape first', 'error'); return; }
-  generateMusic(prompt, prompt.substring(0, 50));
+  generateMusic(prompt, '');
 }
 
 // ───── Review ─────

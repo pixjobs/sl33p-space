@@ -299,47 +299,57 @@ def generate_music(prompt: str, title: str = "",
         gen_start = time.time()
         lyria_calls = 0
 
-        response = client.models.generate_content(
-            model=model,
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=["audio"],
-            ),
-        )
-        lyria_calls += 1
+        def _try_generate(content: str) -> bool:
+            nonlocal description, lyria_calls
+            try:
+                resp = client.models.generate_content(
+                    model=model,
+                    contents=content,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["audio"],
+                    ),
+                )
+                lyria_calls += 1
+            except Exception as gen_err:
+                log.warning("Lyria call failed: %s", gen_err)
+                return False
 
-        audio_received = False
-        if response.candidates and response.candidates[0].content:
-            for part in response.candidates[0].content.parts:
+            if not resp.candidates:
+                log.warning("Lyria returned no candidates")
+                return False
+
+            candidate = resp.candidates[0]
+            if not candidate.content or not candidate.content.parts:
+                reason = getattr(candidate, "finish_reason", "unknown")
+                log.warning("Lyria candidate empty, finish_reason=%s", reason)
+                return False
+
+            for part in candidate.content.parts:
                 if part.text is not None:
                     description = part.text
                 elif part.inline_data is not None and part.inline_data.data:
                     with open(filepath, "wb") as f:
                         f.write(part.inline_data.data)
-                    audio_received = True
+                    return True
+            return False
+
+        prompts_to_try = [
+            full_prompt,
+            f"{_blend_with_preset(prompt)}\n\n{SLEEP_STYLE}",
+            f"{random.choice(list(PRESET_PROMPTS.values()))}\n\n{SLEEP_STYLE}",
+        ]
+
+        audio_received = False
+        for i, attempt_prompt in enumerate(prompts_to_try):
+            if i > 0:
+                log.info("Lyria retry %d/%d", i, len(prompts_to_try) - 1)
+            audio_received = _try_generate(attempt_prompt)
+            if audio_received:
+                break
 
         if not audio_received or not os.path.exists(filepath):
-            retry_prompt = f"{_blend_with_preset(prompt)}\n\n{SLEEP_STYLE}"
-            log.info("Lyria retry with blended preset prompt")
-            response = client.models.generate_content(
-                model=model,
-                contents=retry_prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=["audio"],
-                ),
-            )
-            lyria_calls += 1
-            if response.candidates and response.candidates[0].content:
-                for part in response.candidates[0].content.parts:
-                    if part.text is not None:
-                        description = part.text
-                    elif part.inline_data is not None and part.inline_data.data:
-                        with open(filepath, "wb") as f:
-                            f.write(part.inline_data.data)
-                        audio_received = True
-
-        if not audio_received or not os.path.exists(filepath):
-            return {"error": "No audio data received from model"}
+            log.error("All %d Lyria attempts failed for prompt: %s", len(prompts_to_try), prompt[:100])
+            return {"error": "Music generation failed after multiple attempts. Please try again."}
 
         target_mins = cfg.get("target_duration_minutes", TARGET_DURATION_MINUTES)
         _loop_with_crossfade(filepath, target_minutes=target_mins)

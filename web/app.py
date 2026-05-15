@@ -249,7 +249,10 @@ def create_app(agent_runner=None):
         title = data.get("title", "")
         result = generate_music(prompt, title=title, user_id=uid)
 
-        if "error" not in result and not result.get("cached"):
+        if "error" in result:
+            return jsonify(result), 500
+
+        if not result.get("cached"):
             consume_generation(uid)
 
         return jsonify(result)

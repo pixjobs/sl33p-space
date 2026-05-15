@@ -132,6 +132,10 @@ async function api(url, method, body) {
   if (res.status === 429) {
     return { quota_error: true, ...await res.json() };
   }
+  if (res.status >= 500) {
+    try { return await res.json(); } catch (_) {}
+    return { error: 'Something went wrong. Please try again.' };
+  }
   return res.json();
 }
 
