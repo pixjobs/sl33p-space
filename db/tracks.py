@@ -206,6 +206,16 @@ def update_track_stats(track_id: str, rating: int) -> bool:
     return True
 
 
+def has_active_generation_job() -> bool:
+    db = get_db()
+    if db is None:
+        return False
+    return db.generation_jobs.count_documents(
+        {"status": {"$in": ["pending", "processing"]}},
+        limit=1,
+    ) > 0
+
+
 def create_generation_job(user_id: str, prompt: str, title: str = "") -> str | None:
     db = get_db()
     if db is None:

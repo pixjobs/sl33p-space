@@ -99,7 +99,7 @@ def _save_index(index: dict):
         json.dump(index, f, indent=2)
 
 
-TARGET_DURATION_MINUTES = 8
+TARGET_DURATION_MINUTES = 5
 CROSSFADE_MS = 4000
 MAX_TRACKS_PER_USER = 10
 MAX_TRACKS_TOTAL = 50
@@ -413,8 +413,7 @@ def generate_music(prompt: str, title: str = "",
 
         # Generate additional unique clips with variation hints
         target_mins = cfg.get("target_duration_minutes", TARGET_DURATION_MINUTES)
-        num_variations = max(target_mins // 3, 2)
-        hints = random.sample(_VARIATION_HINTS, min(num_variations, len(_VARIATION_HINTS)))
+        hints = random.sample(_VARIATION_HINTS, 1)
 
         clip_paths = [clip_path_0]
         for vi, hint in enumerate(hints):

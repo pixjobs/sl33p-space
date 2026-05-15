@@ -281,7 +281,9 @@ def create_app(agent_runner=None):
         if cached:
             return jsonify(cached)
 
-        from db.tracks import create_generation_job
+        from db.tracks import create_generation_job, has_active_generation_job
+        if has_active_generation_job():
+            return jsonify({"error": "A track is already being generated. Please wait for it to finish."}), 429
         job_id = create_generation_job(uid, prompt, title)
         if not job_id:
             return jsonify({"error": "Could not create generation job"}), 500
