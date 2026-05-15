@@ -202,6 +202,29 @@ def _enrich_prompt(raw: str) -> str:
     return f"{raw}. {suffix}"
 
 
+def _generate_title(prompt: str) -> str:
+    """Ask Gemini for a short evocative track title based on the prompt."""
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        return prompt[:60]
+    try:
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=(
+                "Reply with ONLY a single short poetic title (2-4 words) for an "
+                "ambient sleep track. No quotes, no list, no explanation.\n\n"
+                f"Description: {prompt[:200]}"
+            ),
+        )
+        raw = (resp.text or "").strip()
+        title = raw.split("\n")[0].strip().lstrip("*- ").strip('"\'').strip()
+        return title[:60] if title else prompt[:60]
+    except Exception:
+        return prompt[:60]
+
+
 def _blend_with_preset(raw: str) -> str:
     """Blend user input with a random preset for a retry after initial failure."""
     preset_name, preset_prompt = random.choice(list(PRESET_PROMPTS.items()))
@@ -341,7 +364,7 @@ def generate_music(prompt: str, title: str = "",
         except Exception:
             pass
 
-        track_title = title or prompt[:60]
+        track_title = title or _generate_title(prompt)
 
         # Persist to MongoDB
         track_data = {
