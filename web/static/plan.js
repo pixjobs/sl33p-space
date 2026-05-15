@@ -322,6 +322,7 @@ async function startSleep() {
       }
       if (plan.soundscape_src) params.set('track', plan.soundscape_src);
       if (plan.soundscape_title) params.set('title', plan.soundscape_title);
+      if (_plan.mood) params.set('mood', _plan.mood);
       window.location.href = '/sleep?' + params.toString();
     } else {
       showToast(data.error || 'Failed to create session', 'error');

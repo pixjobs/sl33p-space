@@ -1594,6 +1594,11 @@ details[open] > .presets-toggle::before {
   inset: 0;
   background: rgba(10, 6, 2, 0.55);
 }
+[data-mood="calm"] .imm-bg-overlay    { background: rgba(6, 10, 8, 0.55); }
+[data-mood="tired"] .imm-bg-overlay   { background: rgba(4, 6, 14, 0.6); }
+[data-mood="stressed"] .imm-bg-overlay { background: rgba(10, 4, 14, 0.58); }
+[data-mood="restless"] .imm-bg-overlay { background: rgba(12, 8, 2, 0.55); }
+[data-mood="wired"] .imm-bg-overlay   { background: rgba(2, 10, 12, 0.55); }
 
 /* Center content */
 .imm-center {

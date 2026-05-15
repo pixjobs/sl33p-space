@@ -99,7 +99,7 @@ def _save_index(index: dict):
         json.dump(index, f, indent=2)
 
 
-TARGET_DURATION_MINUTES = 5
+TARGET_DURATION_MINUTES = 8
 CROSSFADE_MS = 3000
 MAX_TRACKS_PER_USER = 10
 MAX_TRACKS_TOTAL = 50

@@ -79,6 +79,42 @@
   margin-bottom: 1.5rem;
 }
 
+/* ───── Now Playing Strip ───── */
+.now-playing {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-radius: 1rem;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 1rem;
+  max-width: 320px;
+}
+.now-playing-role {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: rgba(255,255,255,0.3);
+  white-space: nowrap;
+}
+.now-playing-title {
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.6);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.now-playing-progress {
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ───── Waveform Visualiser ───── */
 .viz-container {
   position: relative;
@@ -249,7 +285,7 @@
 
 {% block content %}
 
-<div class="immersive" id="immersive">
+<div class="immersive" id="immersive" data-mood="{{ mood|default('calm') }}">
   <!-- Background layers (Ken Burns + APOD slideshow) -->
   <div class="imm-bg" id="imm-bg">
     <div class="imm-bg-image" id="imm-bg-image"></div>
@@ -280,6 +316,13 @@
 
     <!-- Status readout -->
     <div class="status-readout" id="status-readout">Soundscape active</div>
+
+    <!-- Now Playing Strip -->
+    <div class="now-playing" id="now-playing" style="display:none">
+      <div class="now-playing-role" id="np-role"></div>
+      <div class="now-playing-title" id="np-title"></div>
+      <div class="now-playing-progress" id="np-progress"></div>
+    </div>
 
     <!-- Waveform Visualiser + Breathing -->
     <div class="viz-container" id="viz-container">
@@ -346,6 +389,7 @@ var _imm = {
   trackSrc: '{{ track_src or "" }}',
   trackTitle: '{{ track_title or "" }}',
   playlistId: '{{ playlist_id or "" }}' || null,
+  mood: '{{ mood|default("calm") }}',
   playlist: [],
   playlistIndex: 0,
   singleTrackMode: false,
@@ -378,7 +422,7 @@ setInterval(updateSleepClock, 1000);
 
 // ───── Auto-Cutoff ─────
 var _MAX_SESSION_MS = 10 * 60 * 60 * 1000; // 10 hours hard max
-var _DEFAULT_TIMER_MIN = 480; // 8 hours default
+var _DEFAULT_TIMER_MIN = 600; // 10 hours default
 
 // ───── Elapsed Timer ─────
 function updateElapsed() {
@@ -608,13 +652,21 @@ function _onFirstGesture() {
 }
 
 function _updateTrackDisplay(track, index) {
-  var telTrack = document.getElementById('tel-track');
   var total = _imm.playlist.length || 1;
-  if (telTrack) telTrack.textContent = total > 1 ? (index + 1) + '/' + total : (track.title || '--').substring(0, 3).toUpperCase();
+  var telTrack = document.getElementById('tel-track');
+  if (telTrack) telTrack.textContent = total > 1 ? (index + 1) + '/' + total : '--';
+  var np = document.getElementById('now-playing');
+  if (np && total > 1) {
+    np.style.display = '';
+    var role = track.role || 'deep_sleep';
+    var roleLabels = {settling:'Settling in', transition:'Transition', deep_sleep:'Deep sleep'};
+    document.getElementById('np-role').textContent = roleLabels[role] || role;
+    document.getElementById('np-title').textContent = track.title || 'Track ' + (index + 1);
+    document.getElementById('np-progress').textContent = (index + 1) + ' of ' + total;
+  }
   var statusEl = document.getElementById('status-readout');
   if (statusEl && total > 1) {
-    var role = track.role || '';
-    var roleLabel = role === 'settling' ? 'Settling in' : role === 'transition' ? 'Transitioning' : 'Deep sleep';
+    var roleLabel = track.role === 'settling' ? 'Settling in' : track.role === 'transition' ? 'Transitioning' : 'Deep sleep';
     statusEl.textContent = roleLabel + ' — ' + (track.title || 'Track ' + (index + 1));
   }
 }
@@ -824,6 +876,23 @@ async function loadApodBackground() {
   apodSlideshow();
 }
 
+// ───── Mood Maps ─────
+var _MOOD_HUES = {
+  calm:     { base: 150, spread: 40 },
+  tired:    { base: 220, spread: 30 },
+  stressed: { base: 270, spread: 35 },
+  restless: { base: 35,  spread: 30 },
+  wired:    { base: 185, spread: 35 },
+};
+
+var _MOOD_BREATH = {
+  calm:     { inhale: 4, hold: 7, exhale: 8 },
+  tired:    { inhale: 4, hold: 4, exhale: 6 },
+  stressed: { inhale: 4, hold: 7, exhale: 8 },
+  restless: { inhale: 5, hold: 5, exhale: 7 },
+  wired:    { inhale: 4, hold: 7, exhale: 10 },
+};
+
 // ───── Waveform Visualiser + Breathing ─────
 // NOTE: No createMediaElementSource — that hijacks the <audio> element
 // through the AudioContext, which suspends on screen lock and kills playback.
@@ -874,30 +943,34 @@ function startVisualiser() {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Breathing cycle: 4s in, 7s hold, 8s out = 19s total
+    // Breathing cycle — timing adapts to mood
+    var breath = _MOOD_BREATH[_imm.mood] || _MOOD_BREATH.calm;
+    var cycleLen = breath.inhale + breath.hold + breath.exhale;
     _viz.breathT += dt;
-    var cycleT = _viz.breathT % 19;
+    var cycleT = _viz.breathT % cycleLen;
     var breathScale, label;
-    if (cycleT < 4) {
-      breathScale = 1 + 0.6 * (cycleT / 4);
+    if (cycleT < breath.inhale) {
+      breathScale = 1 + 0.6 * (cycleT / breath.inhale);
       label = 'Breathe in';
       _viz.breathPhase = 0;
-    } else if (cycleT < 11) {
+    } else if (cycleT < breath.inhale + breath.hold) {
       breathScale = 1.6;
       label = 'Hold';
       _viz.breathPhase = 1;
     } else {
-      breathScale = 1.6 - 0.6 * ((cycleT - 11) / 8);
+      breathScale = 1.6 - 0.6 * ((cycleT - breath.inhale - breath.hold) / breath.exhale);
       label = 'Breathe out';
       _viz.breathPhase = 2;
     }
     var el = document.getElementById('breath-label');
     if (el) el.textContent = label;
 
-    _viz.hueOffset += dt * 12;
-    var hue1 = (_viz.hueOffset) % 360;
-    var hue2 = (hue1 + 60) % 360;
-    var hue3 = (hue1 + 180) % 360;
+    // Mood-anchored hues — drift within the mood's colour range
+    var moodHue = _MOOD_HUES[_imm.mood] || _MOOD_HUES.calm;
+    _viz.hueOffset += dt * 5;
+    var hue1 = moodHue.base + Math.sin(_viz.hueOffset * 0.1) * moodHue.spread;
+    var hue2 = hue1 + 25;
+    var hue3 = hue1 - 20;
 
     // Audio-reactive amplitude from the playing audio element
     var audio = document.getElementById('imm-audio');

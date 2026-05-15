@@ -272,12 +272,14 @@ def create_app(agent_runner=None):
         track_src = request.args.get("track", "")
         track_title = request.args.get("title", "")
         playlist_id = request.args.get("playlist", "")
+        mood = request.args.get("mood", "calm")
         return render_template(
             "sleep.html",
             session_id=session_id,
             track_src=track_src,
             track_title=track_title,
             playlist_id=playlist_id,
+            mood=mood,
         )
 
     @app.route("/api/sleep/recommend", methods=["POST"])
