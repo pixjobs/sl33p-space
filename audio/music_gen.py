@@ -390,9 +390,18 @@ def generate_music(prompt: str, title: str = "",
 
         clip_paths = [clip_path_0]
         for vi, hint in enumerate(hints):
+            time.sleep(15)
             vpath = os.path.join(LOCAL_CACHE_DIR, f"{key}_c{vi + 1}.ogg")
             variation_prompt = f"{enriched} {hint}\n\n{SLEEP_STYLE}"
-            if _try_generate(variation_prompt, vpath):
+            ok = False
+            for attempt in range(2):
+                if attempt > 0:
+                    time.sleep(20)
+                    log.info("Variation %d retry after backoff", vi + 1)
+                if _try_generate(variation_prompt, vpath):
+                    ok = True
+                    break
+            if ok:
                 clip_paths.append(vpath)
             else:
                 log.info("Variation %d failed, continuing with %d clips", vi + 1, len(clip_paths))
