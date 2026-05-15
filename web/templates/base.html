@@ -20,12 +20,14 @@
       },
     }
   </script>
+  <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='logo.jpg') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='logo.jpg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% block styles %}{% endblock %}
 </head>
 <body data-tracking-level="{{ tracking_level|default('basic') }}">
   <nav class="nav">
-    <a href="/" class="nav-brand">sl33p-space</a>
+    <a href="/" class="nav-brand"><img src="{{ url_for('static', filename='logo.jpg') }}" alt="" class="inline-block w-6 h-6 rounded-md mr-1.5 align-middle" style="margin-top:-2px">sl33p-space</a>
     <div class="nav-user" id="nav-user">
       {% if is_admin %}<a href="/admin" class="btn btn-sm btn-ghost" style="margin-right:0.5rem">Admin</a>{% endif %}
       <a href="/" class="btn btn-sm btn-ghost" id="sign-in-btn" style="display:none">Sign In</a>
