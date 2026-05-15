@@ -20,6 +20,7 @@
 .tier-admin { background: rgba(124,92,252,0.15); color: #7c5cfc; }
 .tier-subscriber { background: rgba(52,211,153,0.15); color: #34d399; }
 .tier-trial { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.tier-plus { background: rgba(96,165,250,0.15); color: #60a5fa; }
 .tier-free { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.4); }
 
 .admin-play-btn { background: none; border: 1px solid rgba(255,255,255,0.12); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: rgba(255,255,255,0.4); transition: all 0.15s; flex-shrink: 0; }
@@ -189,12 +190,29 @@
     return el;
   }
 
-  function tierTd(tier) {
+  function tierTd(tier, uid) {
     var el = document.createElement('td');
-    var badge = document.createElement('span');
-    badge.className = 'tier-badge ' + (tierClasses[tier] || 'tier-free');
-    badge.textContent = tier || 'free';
-    el.appendChild(badge);
+    var wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '0.35rem';
+    var sel = document.createElement('select');
+    sel.style.cssText = 'background:#1a1a2e;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:0.15rem 0.3rem;color:rgba(255,255,255,0.6);font-size:0.65rem;-webkit-appearance:none';
+    ['free', 'plus', 'admin'].forEach(function(t) {
+      var opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = t;
+      if (t === (tier || 'free')) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', function() {
+      api('/api/admin/set-tier', 'POST', { uid: uid, tier: sel.value }).then(function(data) {
+        if (data.error) { sel.value = tier || 'free'; return; }
+        showToast('Tier updated to ' + sel.value, 'success');
+      });
+    });
+    wrap.appendChild(sel);
+    el.appendChild(wrap);
     return el;
   }
 
@@ -453,7 +471,7 @@
       }
       tr.appendChild(userTd);
 
-      tr.appendChild(tierTd(u.tier));
+      tr.appendChild(tierTd(u.tier, u.uid));
       tr.appendChild(td(String(u.generations_this_month)));
 
       var creditsTd = document.createElement('td');

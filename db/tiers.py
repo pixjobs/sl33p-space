@@ -13,8 +13,9 @@ from db import get_db
 
 
 TIER_LIMITS = {
-    "free": {"generations_per_month": 2},
-    "admin": {"generations_per_month": 999},
+    "free": {"generations_per_month": 2, "chat_per_day": 10},
+    "plus": {"generations_per_month": 10, "chat_per_day": 50},
+    "admin": {"generations_per_month": 999, "chat_per_day": 999},
 }
 
 
@@ -66,6 +67,8 @@ def get_user_tier(uid: str) -> dict:
         or credit_balance > 0
     )
 
+    chat_bonus = user.get("chat_bonus", 0) if user else 0
+
     return {
         "type": tier_type,
         "generations_per_month": limits["generations_per_month"],
@@ -74,6 +77,8 @@ def get_user_tier(uid: str) -> dict:
         "can_generate": can_generate,
         "credits_balance": credit_balance,
         "is_admin": tier_type == "admin",
+        "chat_per_day": limits.get("chat_per_day", 10),
+        "chat_bonus": chat_bonus,
     }
 
 
@@ -86,6 +91,8 @@ def _default_tier_info() -> dict:
         "can_generate": True,
         "credits_balance": 0,
         "is_admin": False,
+        "chat_per_day": 10,
+        "chat_bonus": 0,
     }
 
 
@@ -320,3 +327,72 @@ def set_admin(uid: str) -> bool:
         }},
     )
     return True
+
+
+def set_user_tier(uid: str, tier_type: str) -> bool:
+    db = get_db()
+    if db is None:
+        return False
+    if tier_type not in TIER_LIMITS:
+        return False
+    limits = TIER_LIMITS[tier_type]
+    db.users.update_one(
+        {"_id": uid},
+        {"$set": {
+            "tier.type": tier_type,
+            "tier.generations_per_month": limits["generations_per_month"],
+            "updated_at": datetime.now(timezone.utc),
+        }},
+    )
+    return True
+
+
+def check_chat_allowance(uid: str) -> tuple[bool, int, int]:
+    db = get_db()
+    if db is None:
+        return True, 999, 999
+
+    user = db.users.find_one({"_id": uid})
+    tier_type = "free"
+    chat_bonus = 0
+    if user:
+        tier_type = user.get("tier", {}).get("type", "free")
+        chat_bonus = user.get("chat_bonus", 0)
+
+    if tier_type == "admin":
+        return True, 999, 999
+
+    limits = TIER_LIMITS.get(tier_type, TIER_LIMITS["free"])
+    daily_limit = limits.get("chat_per_day", 10)
+    total_limit = daily_limit + chat_bonus
+
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    used_today = db.api_usage.count_documents({
+        "user_id": uid,
+        "metadata.purpose": "chat",
+        "created_at": {"$gte": today_start},
+    })
+
+    remaining = max(0, total_limit - used_today)
+    return remaining > 0, remaining, total_limit
+
+
+def award_sleep_bonus(uid: str, duration_minutes: int) -> int:
+    if duration_minutes < 30:
+        return 0
+    db = get_db()
+    if db is None:
+        return 0
+    bonus = min(duration_minutes // 60, 5)
+    if bonus <= 0:
+        return 0
+    db.users.update_one(
+        {"_id": uid},
+        {
+            "$inc": {"chat_bonus": bonus},
+            "$set": {"updated_at": datetime.now(timezone.utc)},
+        },
+    )
+    return bonus

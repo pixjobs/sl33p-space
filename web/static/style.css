@@ -1997,3 +1997,74 @@ details[open] > .presets-toggle::before {
 body:has(.immersive) .nav { display: none; }
 body:has(.immersive) .container { padding: 0; max-width: 100%; }
 body:has(.immersive) { padding-bottom: 0; }
+
+/* ───── Chat Feedback Thumbs ───── */
+.chat-feedback {
+  display: flex; gap: 0.25rem; margin-top: 0.2rem; padding-left: 2.25rem;
+  opacity: 0; transition: opacity 0.15s;
+}
+.coach-row:hover .chat-feedback { opacity: 0.5; }
+.chat-feedback:hover { opacity: 1 !important; }
+.chat-fb-btn {
+  background: none; border: none; cursor: pointer; font-size: 0.65rem;
+  padding: 0.1rem 0.25rem; border-radius: 0.25rem;
+  transition: background 0.15s;
+}
+.chat-fb-btn:hover { background: rgba(255,255,255,0.08); }
+.chat-fb-done {
+  font-size: 0.6rem; color: rgba(255,255,255,0.25); font-style: italic;
+  opacity: 1 !important;
+}
+
+/* ───── Chat Remaining Counter ───── */
+.chat-remaining {
+  font-size: 0.6rem; color: rgba(255,255,255,0.2); text-align: right;
+  padding: 0.15rem 0.5rem 0; font-variant-numeric: tabular-nums;
+}
+.chat-remaining-low { color: rgba(251,146,60,0.5); }
+
+/* ───── Feedback Widget ───── */
+.feedback-fab {
+  position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 1000;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.4); font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s; backdrop-filter: blur(12px);
+}
+.feedback-fab:hover {
+  background: rgba(124,92,252,0.15); border-color: rgba(124,92,252,0.3);
+  color: rgba(255,255,255,0.7);
+}
+body:has(.immersive) .feedback-fab { display: none; }
+
+.feedback-widget {
+  position: fixed; bottom: 4.5rem; right: 1.25rem; z-index: 1001;
+  width: 280px; background: rgba(19,21,29,0.95); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.75rem; padding: 1rem; backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.feedback-header {
+  font-size: 0.75rem; font-weight: 600; color: rgba(255,255,255,0.5);
+  margin-bottom: 0.5rem;
+}
+.feedback-type-pills {
+  display: flex; gap: 0.35rem; margin-bottom: 0.5rem;
+}
+.feedback-type-pills .pill {
+  flex: 1; padding: 0.3rem 0; font-size: 0.65rem; border-radius: 0.35rem;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.15s;
+  text-align: center;
+}
+.feedback-type-pills .pill.active {
+  background: rgba(124,92,252,0.15); border-color: rgba(124,92,252,0.3);
+  color: rgba(255,255,255,0.7);
+}
+.feedback-textarea {
+  width: 100%; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 0.5rem; padding: 0.5rem; font-size: 0.75rem;
+  color: rgba(255,255,255,0.7); resize: none; margin-bottom: 0.5rem;
+  font-family: inherit;
+}
+.feedback-textarea:focus { outline: none; border-color: rgba(124,92,252,0.4); }

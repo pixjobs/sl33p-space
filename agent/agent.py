@@ -284,6 +284,19 @@ def log_factors(session_id: str, factors: str) -> dict:
     return {"error": "Could not update session"}
 
 
+def get_user_feedback(limit: int = 5) -> dict:
+    """Get recent feedback from the current user to understand their experience.
+
+    Args:
+        limit: Number of recent feedback items to return (default 5).
+
+    Returns:
+        Recent feedback items and counts by type (thumbs_up, thumbs_down, bug, idea).
+    """
+    from db.feedback import get_user_feedback_summary
+    return get_user_feedback_summary(_current_user_id, limit=limit)
+
+
 ROOT_TOOLS = [
     get_sleep_history,
     get_mongodb_sleep_insights,
@@ -296,6 +309,7 @@ ROOT_TOOLS = [
     get_tracking_level,
     get_user_tier_info,
     log_factors,
+    get_user_feedback,
 ]
 
 

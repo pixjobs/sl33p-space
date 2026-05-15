@@ -192,20 +192,43 @@ def create_app(agent_runner=None):
         response.headers['Access-Control-Expose-Headers'] = 'Content-Length'
         return response
 
+    # ───── Feedback ─────
+
+    @app.route("/api/feedback", methods=["POST"])
+    @require_auth
+    @rate_limit(max_calls=10, window_seconds=60)
+    def api_feedback():
+        from db.feedback import submit_feedback
+        data = request.get_json(force=True)
+        feedback_type = data.get("type", "other")
+        message = data.get("message", "")
+        context = data.get("context", {})
+        context["page"] = context.get("page", request.referrer or "")
+        uid = get_user_id()
+        fid = submit_feedback(uid, feedback_type, message, context)
+        if fid:
+            return jsonify({"status": "ok", "id": fid})
+        return jsonify({"error": "Invalid feedback type"}), 400
+
     # ───── Chat ─────
 
     @app.route("/api/chat", methods=["POST"])
     @require_auth
     @rate_limit(max_calls=20, window_seconds=60)
     def api_chat():
+        from db.tiers import check_chat_allowance
         data = request.get_json(force=True)
         message = data.get("message", "").strip()
         if not message:
             return jsonify({"error": "Empty message"}), 400
+        uid = get_user_id()
+        allowed, remaining, limit = check_chat_allowance(uid)
+        if not allowed:
+            return jsonify({"error": "Daily chat limit reached. Sleep longer to earn more!", "remaining": 0, "limit": limit}), 429
         if _agent_runner:
-            response = _agent_runner(message, get_user_id())
-            return jsonify({"response": response})
-        return jsonify({"response": "Agent not configured. Set GOOGLE_API_KEY to enable."})
+            response = _agent_runner(message, uid)
+            return jsonify({"response": response, "remaining": remaining - 1})
+        return jsonify({"response": "Agent not configured. Set GOOGLE_API_KEY to enable.", "remaining": remaining - 1})
 
     # ───── Music Routes ─────
 
@@ -465,15 +488,24 @@ def create_app(agent_runner=None):
     @require_auth
     def api_sleep_end():
         from db.sessions import end_session, get_active_session
+        from db.tiers import award_sleep_bonus
         data = request.get_json(force=True)
         uid = get_user_id()
         sid = data.get("session_id")
         if not sid:
             session = get_active_session(uid)
             sid = session["_id"] if session else None
+        chat_bonus = 0
         if sid:
             end_session(sid, user_id=uid)
-        return jsonify({"status": "ok"})
+            from db import get_db
+            db = get_db()
+            if db:
+                from bson import ObjectId
+                ended = db.sleep_sessions.find_one({"_id": ObjectId(sid)})
+                dur = (ended or {}).get("actual", {}).get("duration_minutes", 0) or 0
+                chat_bonus = award_sleep_bonus(uid, dur)
+        return jsonify({"status": "ok", "chat_bonus": chat_bonus})
 
     @app.route("/api/sleep/review", methods=["POST"])
     @require_auth
@@ -797,6 +829,18 @@ def create_app(agent_runner=None):
         from_name = (user.get("name", "") or "").split()[0] if user else "Admin"
         new_balance = gift_credits(get_user_id(), target_uid, amount, from_name)
         return jsonify({"status": "ok", "new_balance": new_balance})
+
+    @app.route("/api/admin/set-tier", methods=["POST"])
+    @require_admin
+    def api_admin_set_tier():
+        from db.tiers import set_user_tier
+        data = request.get_json(force=True)
+        uid = data.get("uid")
+        tier = data.get("tier")
+        if not uid or tier not in ("free", "plus", "admin"):
+            return jsonify({"error": "Invalid uid or tier"}), 400
+        set_user_tier(uid, tier)
+        return jsonify({"status": "ok", "tier": tier})
 
     @app.route("/api/admin/seed", methods=["POST"])
     @require_admin

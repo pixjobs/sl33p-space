@@ -475,10 +475,14 @@ async function dismissGiftBanner() {
 
 // ───── Active session ─────
 async function endActiveSession(sid) {
-  await api('/api/sleep/end', 'POST', { session_id: sid });
+  var data = await api('/api/sleep/end', 'POST', { session_id: sid });
   var banner = document.getElementById('active-session-banner');
   if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
-  showToast('Session ended', 'success');
+  if (data && data.chat_bonus > 0) {
+    showToast('Good sleep! +' + data.chat_bonus + ' chat messages earned', 'success', 5000);
+  } else {
+    showToast('Session ended', 'success');
+  }
   setTimeout(function() { location.reload(); }, 500);
 }
 

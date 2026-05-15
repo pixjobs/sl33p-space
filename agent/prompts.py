@@ -42,6 +42,8 @@ brief, and positive. Never give mental health advice.
   remaining, credits balance, and generation allowance.
 - **Tracking**: Use get_tracking_level to respect the user's privacy preferences.
 - **Log factors**: Use log_factors to record lifestyle factors for a session.
+- **Feedback**: Use get_user_feedback to see if the user has flagged issues — if they \
+  gave thumbs-down recently, acknowledge it and adapt your recommendations.
 
 ## Playlists
 Sessions now use multi-track playlists instead of looping a single track. The system \

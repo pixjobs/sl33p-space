@@ -51,6 +51,19 @@
     <a href="https://github.com/pixjobs/sl33p-space" target="_blank" class="hover:text-white/30 transition-colors">GitHub</a>
   </footer>
   <div class="toast-container" id="toast-container"></div>
+  {% if session.get('user') %}
+  <button class="feedback-fab" onclick="toggleFeedbackWidget()" title="Send feedback">?</button>
+  <div class="feedback-widget hidden" id="feedback-widget">
+    <div class="feedback-header">Send feedback</div>
+    <div class="feedback-type-pills">
+      <button class="pill active" data-type="idea" onclick="selectFeedbackType(this)">Idea</button>
+      <button class="pill" data-type="bug" onclick="selectFeedbackType(this)">Bug</button>
+      <button class="pill" data-type="other" onclick="selectFeedbackType(this)">Other</button>
+    </div>
+    <textarea id="feedback-text" class="feedback-textarea" placeholder="What's on your mind?" rows="3"></textarea>
+    <button class="btn btn-sm btn-primary" onclick="submitGeneralFeedback()" style="width:100%">Send</button>
+  </div>
+  {% endif %}
   {% if firebase_config %}
   <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-auth-compat.js"></script>

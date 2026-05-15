@@ -156,7 +156,35 @@ function showToast(message, type, duration) {
   }, duration);
 }
 
-// ───── User Quota & Bucket Store ─────
+// ───── Feedback Widget ─────
+
+var _feedbackType = 'idea';
+
+function toggleFeedbackWidget() {
+  var w = document.getElementById('feedback-widget');
+  if (w) w.classList.toggle('hidden');
+}
+
+function selectFeedbackType(btn) {
+  _feedbackType = btn.dataset.type;
+  document.querySelectorAll('.feedback-type-pills .pill').forEach(function(p) {
+    p.classList.toggle('active', p === btn);
+  });
+}
+
+async function submitGeneralFeedback() {
+  var text = document.getElementById('feedback-text');
+  var msg = (text && text.value || '').trim();
+  if (!msg) return;
+  await api('/api/feedback', 'POST', {
+    type: _feedbackType,
+    message: msg,
+    context: { page: window.location.pathname }
+  });
+  text.value = '';
+  toggleFeedbackWidget();
+  showToast('Feedback sent — thank you!', 'success');
+}
 
 // ───── Chat ─────
 
@@ -186,6 +214,8 @@ function _renderMd(text) {
   return html;
 }
 
+var _lastUserQuery = '';
+
 function _addChatRow(container, text, role, opts) {
   opts = opts || {};
   var row = document.createElement('div');
@@ -203,6 +233,34 @@ function _addChatRow(container, text, role, opts) {
   }
   row.appendChild(avatar);
   row.appendChild(bubble);
+
+  if (role === 'agent' && !opts.thinking) {
+    var fb = document.createElement('div');
+    fb.className = 'chat-feedback';
+    var up = document.createElement('button');
+    up.className = 'chat-fb-btn';
+    up.textContent = '👍';
+    up.title = 'Helpful';
+    var down = document.createElement('button');
+    down.className = 'chat-fb-btn';
+    down.textContent = '👎';
+    down.title = 'Not helpful';
+    var query = _lastUserQuery;
+    function doFb(type) {
+      api('/api/feedback', 'POST', {
+        type: type,
+        context: { chat_response: text.substring(0, 500), user_query: query }
+      });
+      fb.textContent = 'Thanks';
+      fb.classList.add('chat-fb-done');
+    }
+    up.onclick = function() { doFb('thumbs_up'); };
+    down.onclick = function() { doFb('thumbs_down'); };
+    fb.appendChild(up);
+    fb.appendChild(down);
+    row.appendChild(fb);
+  }
+
   container.appendChild(row);
   container.scrollTop = container.scrollHeight;
   return { row: row, bubble: bubble };
@@ -220,6 +278,7 @@ async function sendChat(e) {
   var msg = input.value.trim();
   if (!msg) return;
 
+  _lastUserQuery = msg;
   var messages = document.getElementById('chat-messages');
   _addChatRow(messages, msg, 'user', { raw: true });
   input.value = '';
@@ -231,11 +290,19 @@ async function sendChat(e) {
 
   try {
     var data = await api('/api/chat', 'POST', { message: msg });
+    if (data.quota_error) {
+      ref.bubble.classList.remove('thinking');
+      ref.bubble.textContent = data.error || 'Daily chat limit reached. Sleep longer to earn more!';
+      _updateChatCounter(0);
+      return;
+    }
     var resp = data.response || data.error || 'No response';
     ref.bubble.classList.remove('thinking');
     // Response from our own API, entity-escaped in _renderMd before formatting
     ref.bubble.innerHTML = _renderMd(resp);  // nosemgrep: innerHTML-xss (input is entity-escaped)
     messages.scrollTop = messages.scrollHeight;
+
+    if (data.remaining !== undefined) _updateChatCounter(data.remaining);
 
     if (resp.includes('/sleep?')) {
       var match = resp.match(/(\/sleep\?[^\s"']+)/);
@@ -254,6 +321,23 @@ async function sendChat(e) {
     ref.bubble.classList.remove('thinking');
     ref.bubble.textContent = 'Error: ' + err.message;
   }
+}
+
+function _updateChatCounter(remaining) {
+  var el = document.getElementById('chat-remaining');
+  if (!el) {
+    var form = document.querySelector('.agent-chat-input');
+    if (!form) return;
+    el = document.createElement('div');
+    el.id = 'chat-remaining';
+    el.className = 'chat-remaining';
+    form.appendChild(el);
+  }
+  if (remaining > 20) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.textContent = remaining + ' left today';
+  if (remaining <= 3) el.classList.add('chat-remaining-low');
+  else el.classList.remove('chat-remaining-low');
 }
 
 // ───── Music Generation ─────
