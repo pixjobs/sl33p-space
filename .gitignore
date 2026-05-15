@@ -57,5 +57,9 @@ firebase-service-account.json
 credentials.json
 service-account*.json
 
+# Claude Code
+.claude/
+CLAUDE.md
+
 # Docker
 docker-compose.override.yml
