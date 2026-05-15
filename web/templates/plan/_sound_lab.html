@@ -1,3 +1,61 @@
+{# ── Track Library ── #}
+<section class="bg-surface border border-border rounded-2xl overflow-hidden backdrop-blur-xl mb-4" id="library-card">
+  <div class="px-5 py-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Soundscapes</div>
+      <div class="flex gap-1" id="library-scope-toggle">
+        <button class="scope-pill active" data-scope="all" onclick="filterTracks('all', this)">All</button>
+        <button class="scope-pill" data-scope="mine" onclick="filterTracks('mine', this)">Mine</button>
+        <button class="scope-pill" data-scope="public" onclick="filterTracks('public', this)">Public</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-2" id="track-strip">
+      {% if tracks %}
+        {% for track in tracks %}
+        <button class="track-chip px-3 py-2.5 bg-transparent border border-border rounded-xl cursor-pointer transition-all text-left hover:border-border-hover hover:bg-surface-hover group" data-id="{{ track.id }}" data-src="{{ track.src or ('/media/music/' + track.filename) }}" data-title="{{ track.title }}" data-mood-tags="{{ track.mood_tags | join(',') }}" data-energy="{{ track.energy_level or 'low' }}" data-owner="{{ 'mine' if track.generated_by == uid else 'public' }}" data-visibility="{{ track.visibility or 'public' }}" onclick="pickTrack(this)">
+          <div class="flex items-center gap-1.5 mb-0.5">
+            <span class="energy-dot e-{{ track.energy_level or 'low' }}"></span>
+            <span class="text-[0.55rem] text-white/25 uppercase tracking-wider">{{ track.energy_level or 'low' }}</span>
+            {% if track.generated_by == uid %}
+            <span class="text-[0.5rem] text-violet-400/50 ml-auto">yours</span>
+            <button class="vis-toggle text-[0.45rem] ml-1 px-1.5 py-0.5 rounded-full border cursor-pointer transition-all {% if track.visibility == 'published' %}border-emerald-500/30 text-emerald-400/60 bg-emerald-500/5{% else %}border-white/10 text-white/25 bg-transparent{% endif %}" data-track-id="{{ track.id }}" onclick="event.stopPropagation(); toggleTrackVisibility(this)" title="{{ 'Unpublish' if track.visibility == 'published' else 'Publish' }}">{{ 'Public' if track.visibility == 'published' else 'Private' }}</button>
+            {% endif %}
+          </div>
+          <span class="block text-[0.75rem] font-medium text-white/80 group-hover:text-white truncate">{{ track.title }}</span>
+          {% if track.mood_tags %}
+          <span class="block text-[0.5rem] text-white/20 mt-0.5 truncate">{{ track.mood_tags | join(' · ') }}</span>
+          {% endif %}
+        </button>
+        {% endfor %}
+      {% else %}
+        <span class="col-span-2 text-xs text-white/30 py-2">No tracks yet &mdash; generating library...</span>
+      {% endif %}
+    </div>
+    {% if seeding or (tracks | length) < 5 %}
+    <div class="flex items-center gap-1.5 text-[0.6rem] text-white/25 pt-1" id="track-seeding">
+      <span class="w-1.5 h-1.5 rounded-full bg-brand" style="animation:seed-pulse 1.5s ease-in-out infinite"></span>
+      Building your library...
+    </div>
+    {% endif %}
+
+    <!-- Preview player -->
+    <div class="track-preview hidden items-center gap-3 mt-3 pt-3 border-t border-border" id="track-preview">
+      <button class="w-9 h-9 rounded-full border border-border bg-surface text-white flex items-center justify-center cursor-pointer transition-all shrink-0 hover:border-brand hover:bg-brand-soft hover:scale-105" id="preview-btn" onclick="togglePreview()">
+        <svg id="preview-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </button>
+      <span class="text-sm text-white/80 flex-1 font-medium" id="preview-title"></span>
+      <input type="range" class="w-[60px] h-[3px]" id="preview-vol" min="0" max="100" value="70" oninput="setPreviewVol(this.value)">
+    </div>
+    <audio id="preview-audio" preload="none"></audio>
+
+    <!-- Use Tonight button (visible when a track is selected) -->
+    <div class="hidden mt-3" id="use-tonight-wrap">
+      <button class="w-full py-2.5 rounded-lg text-xs font-semibold bg-brand/20 text-brand border-0 cursor-pointer hover:bg-brand/30 transition-colors" onclick="useTrackTonight()">Use Tonight</button>
+    </div>
+  </div>
+</section>
+
+{# ── Sound Lab ── #}
 <section class="lab-wizard" id="lab-wizard">
   {# ── Step indicator ── #}
   <div class="lab-steps">

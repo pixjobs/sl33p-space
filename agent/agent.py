@@ -2,10 +2,11 @@
 sl33p-space agent built with Google ADK.
 
 When GOOGLE_API_KEY is set, this provides a Gemini-powered sleep assistant.
-When not set, it falls back to a simple keyword-based handler so the app
+When not set, it falls back to a data-driven handler so the app
 still works without an API key during development.
 """
 
+import contextvars
 import json
 import os
 from typing import Optional
@@ -14,7 +15,9 @@ from agent.prompts import ROOT_PROMPT, PERSONA_CONTEXTS
 
 _adk_available = False
 _root_agent = None
-_current_user_id = "default"
+
+# Thread-safe user context — each request gets its own value.
+_user_ctx = contextvars.ContextVar("user_id", default="default")
 
 try:
     from google.adk.agents import Agent
@@ -29,6 +32,14 @@ VALID_PERSONAS = ["shift_worker", "emergency_services", "shallow_sleeper", "inso
 VALID_FACTORS = ["caffeine", "exercise", "screen_time", "stress", "alcohol", "nap", "late_meal"]
 
 
+def _set_user(uid: str):
+    _user_ctx.set(uid)
+
+
+def _get_user() -> str:
+    return _user_ctx.get()
+
+
 # --- Tool functions (called by Gemini) ---
 
 def generate_music_track(prompt: str) -> dict:
@@ -41,7 +52,7 @@ def generate_music_track(prompt: str) -> dict:
         Path to the generated audio file, or error message.
     """
     from audio.music_gen import generate_music
-    return generate_music(prompt, user_id=_current_user_id)
+    return generate_music(prompt, user_id=_get_user())
 
 
 def list_music_library() -> dict:
@@ -60,8 +71,9 @@ def get_sleep_history(limit: int = 7) -> dict:
         Recent sessions with ratings, durations, factors, and overall stats.
     """
     from db.sessions import get_recent_sessions, get_sleep_stats
-    sessions = get_recent_sessions(_current_user_id, limit=limit)
-    stats = get_sleep_stats(_current_user_id)
+    uid = _get_user()
+    sessions = get_recent_sessions(uid, limit=limit)
+    stats = get_sleep_stats(uid)
     formatted = []
     for s in sessions:
         review = s.get("review") or {}
@@ -85,7 +97,7 @@ def get_mongodb_sleep_insights(days: int = 30) -> dict:
         MongoDB-backed insights including best tracks, mood patterns, factor correlations, and recommendation summary.
     """
     from db.insights import get_user_sleep_insights
-    return get_user_sleep_insights(_current_user_id, days=days)
+    return get_user_sleep_insights(_get_user(), days=days)
 
 
 def recommend_sleep_plan(mood: str = "calm") -> dict:
@@ -102,14 +114,15 @@ def recommend_sleep_plan(mood: str = "calm") -> dict:
     from db.sessions import get_recent_sessions, get_sleep_stats
     from db.users import get_persona
 
+    uid = _get_user()
     tracks = list_generated_music()
-    stats = get_sleep_stats(_current_user_id)
-    persona = get_persona(_current_user_id)
+    stats = get_sleep_stats(uid)
+    persona = get_persona(uid)
     insights = get_mongodb_sleep_insights()
     if mood == "calm" and insights.get("recommended_mood"):
         mood = insights["recommended_mood"]
 
-    playlist_data = build_playlist(mood, persona, _current_user_id)
+    playlist_data = build_playlist(mood, persona, uid)
     playlist_tracks = []
     if playlist_data:
         playlist_tracks = [
@@ -118,7 +131,7 @@ def recommend_sleep_plan(mood: str = "calm") -> dict:
         ]
 
     best_rated = None
-    for s in get_recent_sessions(_current_user_id, limit=7):
+    for s in get_recent_sessions(uid, limit=7):
         r = (s.get("review") or {}).get("rating", 0)
         if r >= 4:
             best_rated = s.get("plan", {}).get("soundscape_title")
@@ -152,10 +165,11 @@ def start_sleep_session(track_title: str = "", mood: str = "calm") -> dict:
     from db.sessions import create_session
     from db.users import get_persona
 
+    uid = _get_user()
     tracks = list_generated_music()
-    persona = get_persona(_current_user_id)
+    persona = get_persona(uid)
 
-    playlist_data = build_playlist(mood, persona, _current_user_id)
+    playlist_data = build_playlist(mood, persona, uid)
     playlist_id = playlist_data.get("playlist_id") if playlist_data else None
 
     if playlist_data and playlist_data.get("tracks"):
@@ -185,7 +199,7 @@ def start_sleep_session(track_title: str = "", mood: str = "calm") -> dict:
             "mood": mood,
         }
 
-    session_id = create_session(_current_user_id, plan, playlist_id=playlist_id)
+    session_id = create_session(uid, plan, playlist_id=playlist_id)
     if not session_id:
         return {"error": "Could not create session"}
 
@@ -213,7 +227,7 @@ def get_user_persona() -> dict:
         Persona key, label, and description. Or null if no persona set.
     """
     from db.users import get_persona
-    persona = get_persona(_current_user_id)
+    persona = get_persona(_get_user())
     if persona and persona in PERSONA_CONTEXTS:
         labels = {
             "shift_worker": "Shift Worker",
@@ -242,14 +256,14 @@ def set_user_persona(persona_key: str) -> dict:
     from db.users import set_persona
     if persona_key and persona_key not in VALID_PERSONAS:
         return {"error": f"Invalid persona. Choose from: {VALID_PERSONAS}"}
-    set_persona(_current_user_id, persona_key or None)
+    set_persona(_get_user(), persona_key or None)
     return {"set": persona_key or None}
 
 
 def get_tracking_level() -> dict:
     """Get the user's data tracking preference (minimal, basic, or detailed)."""
     from db.users import get_user
-    user = get_user(_current_user_id)
+    user = get_user(_get_user())
     if user:
         level = user.get("preferences", {}).get("tracking_level", "basic")
         return {"tracking_level": level}
@@ -263,7 +277,7 @@ def get_user_tier_info() -> dict:
         Tier type, trial status, credits balance, and whether they can generate tracks.
     """
     from db.tiers import get_user_tier
-    return get_user_tier(_current_user_id)
+    return get_user_tier(_get_user())
 
 
 def log_factors(session_id: str, factors: str) -> dict:
@@ -294,7 +308,7 @@ def get_user_feedback(limit: int = 5) -> dict:
         Recent feedback items and counts by type (thumbs_up, thumbs_down, bug, idea).
     """
     from db.feedback import get_user_feedback_summary
-    return get_user_feedback_summary(_current_user_id, limit=limit)
+    return get_user_feedback_summary(_get_user(), limit=limit)
 
 
 ROOT_TOOLS = [
@@ -312,6 +326,105 @@ ROOT_TOOLS = [
     get_user_feedback,
 ]
 
+
+# --- Structured recommendation (used by /api/sleep/recommend) ---
+
+def get_recommendation(user_id: str, mood: str = "calm") -> dict:
+    """Generate a data-driven sleep recommendation via the agent's tools.
+
+    Calls the same MongoDB-backed tools the chat agent uses, then optionally
+    passes the data through Gemini for a natural-language synthesis.
+    """
+    _set_user(user_id)
+
+    insights = get_mongodb_sleep_insights()
+    plan = recommend_sleep_plan(mood=mood)
+
+    if not _adk_available or not os.environ.get("GOOGLE_API_KEY"):
+        return _fallback_recommendation(insights, plan, mood)
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+        model = "gemini-3-flash-preview"
+
+        prompt = (
+            "You are a sleep coach. Based on this user's MongoDB sleep data, "
+            "recommend what they should do tonight.\n\n"
+            f"User mood: {mood}\n"
+            f"Insights: {json.dumps(insights, default=str)}\n"
+            f"Available tracks: {json.dumps(plan.get('available_tracks', []))}\n"
+            f"Playlist preview: {json.dumps(plan.get('playlist_preview', []))}\n"
+            f"Stats: total_sessions={plan.get('total_sessions')}, "
+            f"avg_rating={plan.get('avg_rating')}, top_sound={plan.get('top_sound')}\n\n"
+            "Respond with ONLY valid JSON, no markdown:\n"
+            '{"soundscape_title": "exact track name from available_tracks", '
+            '"reasoning": "1-2 sentences citing specific numbers from the data"}'
+        )
+
+        response = client.models.generate_content(
+            model=model, contents=prompt,
+            config={
+                "system_instruction": (
+                    "You are a sleep coach. Be concise. "
+                    "Cite specific numbers from the data (ratings, session counts, best hour). "
+                    "The soundscape_title MUST be an exact match from available_tracks."
+                ),
+                "temperature": 0.7,
+            },
+        )
+
+        try:
+            from db.usage import log_api_usage
+            log_api_usage(user_id=user_id, service="gemini", model=model,
+                          cost_usd=0.001, metadata={"purpose": "sleep_recommendation"})
+        except Exception:
+            pass
+
+        text = response.text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        rec = json.loads(text)
+        rec.setdefault("playlist_id", plan.get("playlist_id"))
+        return rec
+    except Exception:
+        return _fallback_recommendation(insights, plan, mood)
+
+
+def _fallback_recommendation(insights: dict, plan: dict, mood: str) -> dict:
+    """Data-driven recommendation without Gemini — still useful thanks to MongoDB."""
+    best = insights.get("best_track")
+    matrix = insights.get("mood_track_matrix", [])
+    best_hour = insights.get("best_hour")
+    streak = insights.get("current_streak", 0)
+
+    mood_match = next((m for m in matrix if m["mood"] == mood), None)
+
+    if mood_match and mood_match.get("sessions", 0) >= 2:
+        title = mood_match["track"]
+        reasoning = (f"{title} works best when you're {mood} "
+                     f"({mood_match['avg_rating']}/5 across {mood_match['sessions']} sessions)")
+    elif best and best.get("title"):
+        title = best["title"]
+        reasoning = f"Your top-rated track at {best.get('avg_rating', '?')}/5"
+    else:
+        available = plan.get("available_tracks", [])
+        title = available[0] if available else None
+        reasoning = "A good starting point for restful sleep"
+
+    if best_hour is not None:
+        reasoning += f". Your best sleep starts around {best_hour}:00"
+    if streak >= 2:
+        reasoning += f". {streak}-night streak!"
+
+    return {
+        "soundscape_title": title,
+        "reasoning": reasoning,
+        "playlist_id": plan.get("playlist_id"),
+    }
+
+
+# --- Agent setup ---
 
 def _build_prompt(user_id: str) -> str:
     """Build the root prompt with persona context injected."""
@@ -363,7 +476,7 @@ def make_chat_handler(config: dict = None):
     _sessions: dict[str, str] = {}
 
     def handle(message: str, user_id: str = "default") -> str:
-        _current_user_id = user_id
+        _set_user(user_id)
 
         prompt = _build_prompt(user_id)
 
@@ -415,12 +528,11 @@ def make_chat_handler(config: dict = None):
 
 
 def _fallback_handler(message: str, user_id: str = "default") -> str:
-    """Simple keyword-based handler when ADK is not available."""
-    global _current_user_id
+    """Keyword-based handler when ADK is not available — still data-rich."""
+    _set_user(user_id)
     msg = message.lower().strip()
 
     if any(w in msg for w in ["history", "how have i", "how did i"]):
-        _current_user_id = user_id
         insights = get_mongodb_sleep_insights()
         if insights.get("available") and insights["stats"].get("reviewed_sessions", 0) > 0:
             best = insights.get("best_track") or {}
@@ -434,7 +546,6 @@ def _fallback_handler(message: str, user_id: str = "default") -> str:
                 "Shift Worker, Emergency Services, Shallow Sleeper, or Insomniac.")
 
     if any(w in msg for w in ["recommend", "opened", "listen", "tonight"]):
-        _current_user_id = user_id
         insights = get_mongodb_sleep_insights()
         best = insights.get("best_track") or {}
         if best.get("title"):

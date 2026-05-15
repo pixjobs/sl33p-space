@@ -27,59 +27,23 @@
     </div>
   </div>
 
-  <!-- Track picker -->
-  <div class="px-5 py-4 border-b border-border">
-    <div class="flex items-center justify-between mb-3">
-      <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Soundscape</div>
-      <div class="flex gap-1" id="library-scope-toggle">
-        <button class="scope-pill active" data-scope="all" onclick="filterTracks('all', this)">All</button>
-        <button class="scope-pill" data-scope="mine" onclick="filterTracks('mine', this)">Mine</button>
-        <button class="scope-pill" data-scope="public" onclick="filterTracks('public', this)">Public</button>
+  <!-- Start Sleep + track indicator -->
+  <div class="p-5">
+    <button class="w-full py-5 rounded-xl text-base font-semibold cursor-pointer transition-all border-0" id="btn-start" onclick="startSleep()">Start Sleep</button>
+
+    <div class="track-indicator mt-3" id="track-indicator">
+      <div class="flex items-center gap-2">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-3.5 h-3.5 text-white/25 shrink-0"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span class="text-xs text-white/50 flex-1 truncate" id="track-indicator-title">
+          {% if tracks %}{{ tracks[0].title }}{% else %}No tracks available{% endif %}
+        </span>
+        {% if tracks %}
+        <button class="track-change-link" onclick="changeTrack()">change</button>
+        {% endif %}
       </div>
     </div>
-    <div class="grid grid-cols-2 gap-2" id="track-strip">
-      {% if tracks %}
-        {% for track in tracks %}
-        <button class="track-chip px-3 py-2.5 bg-transparent border border-border rounded-xl cursor-pointer transition-all text-left hover:border-border-hover hover:bg-surface-hover group" data-id="{{ track.id }}" data-src="{{ track.src or ('/media/music/' + track.filename) }}" data-title="{{ track.title }}" data-mood-tags="{{ track.mood_tags | join(',') }}" data-energy="{{ track.energy_level or 'low' }}" data-owner="{{ 'mine' if track.generated_by == uid else 'public' }}" onclick="pickTrack(this)">
-          <div class="flex items-center gap-1.5 mb-0.5">
-            <span class="energy-dot e-{{ track.energy_level or 'low' }}"></span>
-            <span class="text-[0.55rem] text-white/25 uppercase tracking-wider">{{ track.energy_level or 'low' }}</span>
-            {% if track.generated_by == uid %}
-            <span class="text-[0.5rem] text-violet-400/50 ml-auto">yours</span>
-            {% endif %}
-          </div>
-          <span class="block text-[0.75rem] font-medium text-white/80 group-hover:text-white truncate">{{ track.title }}</span>
-          {% if track.mood_tags %}
-          <span class="block text-[0.5rem] text-white/20 mt-0.5 truncate">{{ track.mood_tags | join(' · ') }}</span>
-          {% endif %}
-        </button>
-        {% endfor %}
-      {% else %}
-        <span class="col-span-2 text-xs text-white/30 py-2">No tracks yet &mdash; generating library...</span>
-      {% endif %}
-    </div>
-    {% if seeding or (tracks | length) < 5 %}
-    <div class="flex items-center gap-1.5 text-[0.6rem] text-white/25 pt-1" id="track-seeding">
-      <span class="w-1.5 h-1.5 rounded-full bg-brand" style="animation:seed-pulse 1.5s ease-in-out infinite"></span>
-      Building your library...
-    </div>
-    {% endif %}
 
-    <!-- Inline preview player -->
-    <div class="track-preview hidden items-center gap-3 mt-3 pt-3 border-t border-border" id="track-preview">
-      <button class="w-9 h-9 rounded-full border border-border bg-surface text-white flex items-center justify-center cursor-pointer transition-all shrink-0 hover:border-brand hover:bg-brand-soft hover:scale-105" id="preview-btn" onclick="togglePreview()">
-        <svg id="preview-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      </button>
-      <span class="text-sm text-white/80 flex-1 font-medium" id="preview-title"></span>
-      <input type="range" class="w-[60px] h-[3px]" id="preview-vol" min="0" max="100" value="70" oninput="setPreviewVol(this.value)">
-    </div>
-    <audio id="preview-audio" preload="none"></audio>
-  </div>
-
-  <!-- Start -->
-  <div class="p-5">
-    <button class="w-full py-4 rounded-xl text-sm font-semibold cursor-pointer transition-all border-0" id="btn-start" onclick="startSleep()">Start Sleep</button>
-    <button class="w-full mt-2 py-2 bg-transparent border-0 text-[0.7rem] text-white/30 cursor-pointer hover:text-white/50 transition-colors" onclick="toggleManualLog()">Just log last night?</button>
+    <button class="w-full mt-3 py-2 bg-transparent border-0 text-[0.7rem] text-white/30 cursor-pointer hover:text-white/50 transition-colors" onclick="toggleManualLog()">Just log last night?</button>
 
     <div class="hidden mt-3 pt-3 border-t border-border" id="manual-log-form">
       <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25 mb-3">Log a sleep</div>

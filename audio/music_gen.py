@@ -479,6 +479,7 @@ def generate_music(prompt: str, title: str = "",
             "local_path": filepath,
             "storage_mode": "gcs" if gcs_url else "local",
             "generated_by": user_id,
+            "visibility": "public" if user_id == "system" else "private",
             "is_preset": prompt in PRESET_PROMPTS.values(),
             **mood_data,
             **gcs_info,
@@ -590,6 +591,7 @@ def _track_entry(track: dict) -> dict:
         "energy_level": track.get("energy_level", "low"),
         "avg_rating": track.get("avg_rating"),
         "generated_by": track.get("generated_by", "system"),
+        "visibility": track.get("visibility", "public"),
     }
 
 

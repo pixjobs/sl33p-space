@@ -17,6 +17,7 @@ def ensure_indexes():
     db.tracks.create_index("mood_tags")
     db.tracks.create_index([("generated_by", 1), ("archived", 1)])
     db.tracks.create_index("pack_id")
+    db.tracks.create_index("visibility")
 
 
 def upsert_track(data: dict) -> dict | None:
@@ -77,11 +78,17 @@ def get_track(track_id: str) -> dict | None:
     return db.tracks.find_one({"track_id": track_id})
 
 
-def get_all_tracks(include_archived: bool = False) -> list[dict]:
+def get_all_tracks(include_archived: bool = False, user_id: str = None) -> list[dict]:
     db = get_db()
     if db is None:
         return []
     query = {} if include_archived else {"archived": {"$ne": True}}
+    if user_id:
+        query["$or"] = [
+            {"generated_by": user_id},
+            {"visibility": {"$in": ["public", "published"]}},
+            {"is_preset": True},
+        ]
     cursor = db.tracks.find(query, sort=[("created_at", -1)])
     results = []
     for doc in cursor:
@@ -95,7 +102,11 @@ def get_public_tracks() -> list[dict]:
     if db is None:
         return []
     cursor = db.tracks.find(
-        {"$or": [{"generated_by": "system"}, {"is_preset": True}],
+        {"$or": [
+            {"generated_by": "system"},
+            {"is_preset": True},
+            {"visibility": "published"},
+        ],
          "archived": {"$ne": True}},
         sort=[("created_at", -1)],
     )
@@ -148,6 +159,24 @@ def get_pack_tracks(pack_id) -> list[dict]:
         doc["_id"] = str(doc["_id"])
         results.append(doc)
     return results
+
+
+def set_track_visibility(track_id: str, visibility: str, user_id: str) -> tuple[bool, str]:
+    if visibility not in ("private", "published"):
+        return False, "Invalid visibility"
+    db = get_db()
+    if db is None:
+        return False, "Database unavailable"
+    track = db.tracks.find_one({"track_id": track_id})
+    if not track:
+        return False, "Track not found"
+    if track.get("generated_by") != user_id:
+        return False, "Not the track owner"
+    db.tracks.update_one(
+        {"track_id": track_id},
+        {"$set": {"visibility": visibility, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return True, "ok"
 
 
 def archive_track(track_id: str) -> bool:

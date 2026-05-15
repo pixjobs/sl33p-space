@@ -37,7 +37,7 @@ def build_playlist(mood: str, persona: str | None, user_id: str,
         }
         or None if no tracks available.
     """
-    pool = get_all_tracks(include_archived=False)
+    pool = get_all_tracks(include_archived=False, user_id=user_id)
     if not pool:
         return None
 

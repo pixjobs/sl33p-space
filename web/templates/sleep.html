@@ -462,6 +462,8 @@ var _needsGesture = false;
     _hideOverlay();
     _updateMediaSession();
     _savePlaybackState();
+    startAudioKeepAlive();
+    resumeKeepAlive();
   });
 
   audio.addEventListener('pause', function() { updatePlayIcon(true); });
@@ -637,6 +639,9 @@ function _hideOverlay() {
 
 // Global gesture handler — captures first touch/click to unlock audio
 function _onFirstGesture() {
+  // Always start keep-alive on first gesture (iOS requires user gesture for AudioContext)
+  startAudioKeepAlive();
+  resumeKeepAlive();
   if (!_needsGesture) return;
   console.log('[audio] gesture captured, starting playback');
   _needsGesture = false;
@@ -1114,6 +1119,7 @@ function immEndSleep() {
   stopBreathing();
   stopApodSlideshow();
   releaseWakeLock();
+  stopAudioKeepAlive();
   try { sessionStorage.removeItem('sl33p_state'); } catch(e) {}
 
   if (_imm.elapsedInterval) clearInterval(_imm.elapsedInterval);
@@ -1178,8 +1184,51 @@ document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible') {
     var audio = document.getElementById('imm-audio');
     if (audio && !audio.paused) requestWakeLock();
+    // iOS Safari may have suspended audio — nudge it back
+    resumeKeepAlive();
+    if (audio && audio.paused && _imm.started && !_imm._maxCutoffTriggered) {
+      audio.play().catch(function() {});
+    }
   }
 });
+
+// ───── iOS Audio Keep-Alive ─────
+// iOS Safari suspends all audio when the screen locks. A silent Web Audio
+// oscillator running in parallel tricks the OS into keeping the audio
+// session alive, so the <audio> element continues playing.
+var _keepAliveCtx = null;
+
+function startAudioKeepAlive() {
+  if (_keepAliveCtx) return;
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    _keepAliveCtx = new AC();
+    var osc = _keepAliveCtx.createOscillator();
+    var gain = _keepAliveCtx.createGain();
+    gain.gain.value = 0.001; // inaudible
+    osc.connect(gain);
+    gain.connect(_keepAliveCtx.destination);
+    osc.start(0);
+    console.log('[keepalive] silent oscillator started');
+  } catch (e) {
+    console.warn('[keepalive] failed:', e.message);
+  }
+}
+
+function stopAudioKeepAlive() {
+  if (_keepAliveCtx) {
+    _keepAliveCtx.close().catch(function() {});
+    _keepAliveCtx = null;
+  }
+}
+
+// iOS requires AudioContext to be created/resumed from a user gesture
+function resumeKeepAlive() {
+  if (_keepAliveCtx && _keepAliveCtx.state === 'suspended') {
+    _keepAliveCtx.resume().catch(function() {});
+  }
+}
 
 // ───── Session Resume (survive refresh) ─────
 function _savePlaybackState() {

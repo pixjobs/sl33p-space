@@ -220,6 +220,12 @@ function _sortTracksByMood(mood) {
       chip.style.borderColor = '';
     }
   });
+
+  if (chips.length > 0 && !_plan.track) {
+    _plan.track = { id: chips[0].dataset.id, src: chips[0].dataset.src, title: chips[0].dataset.title };
+    chips[0].classList.add('active');
+    _updateTrackIndicator(_plan.track.title);
+  }
 }
 
 function pickTrack(chip) {
@@ -235,6 +241,31 @@ function pickTrack(chip) {
   var audio = document.getElementById('preview-audio');
   audio.src = _plan.track.src;
   audio.volume = parseInt(document.getElementById('preview-vol').value) / 100;
+
+  _updateTrackIndicator(_plan.track.title);
+  var wrap = document.getElementById('use-tonight-wrap');
+  if (wrap) wrap.classList.remove('hidden');
+}
+
+function _updateTrackIndicator(title) {
+  var el = document.getElementById('track-indicator-title');
+  if (el) el.textContent = title;
+}
+
+function changeTrack() {
+  switchTab('library');
+}
+
+function useTrackTonight() {
+  if (!_plan.track) {
+    var chips = document.querySelectorAll('.track-chip');
+    if (chips.length > 0) pickTrack(chips[0]);
+  }
+  if (_plan.track) {
+    _updateTrackIndicator(_plan.track.title);
+    switchTab('tonight');
+    showToast('Track selected', 'success');
+  }
 }
 
 function togglePreview() {
@@ -513,6 +544,28 @@ function filterTracks(scope, btn) {
   }
 }
 
+// ───── Track visibility toggle ─────
+async function toggleTrackVisibility(btn) {
+  var trackId = btn.dataset.trackId;
+  var chip = btn.closest('.track-chip');
+  var current = chip.dataset.visibility;
+  var next = current === 'published' ? 'private' : 'published';
+  try {
+    await api('/api/music/' + trackId + '/visibility', { method: 'POST', body: JSON.stringify({ visibility: next }) });
+    chip.dataset.visibility = next;
+    btn.textContent = next === 'published' ? 'Public' : 'Private';
+    btn.title = next === 'published' ? 'Unpublish' : 'Publish';
+    if (next === 'published') {
+      btn.className = btn.className.replace(/border-white\/10 text-white\/25 bg-transparent/, 'border-emerald-500/30 text-emerald-400/60 bg-emerald-500/5');
+    } else {
+      btn.className = btn.className.replace(/border-emerald-500\/30 text-emerald-400\/60 bg-emerald-500\/5/, 'border-white/10 text-white/25 bg-transparent');
+    }
+    showToast(next === 'published' ? 'Track published to community' : 'Track set to private', 'success');
+  } catch (e) {
+    showToast('Could not update visibility', 'error');
+  }
+}
+
 // ───── Library seeding poll ─────
 (function() {
   var seedEl = document.getElementById('track-seeding');
@@ -619,6 +672,7 @@ function useAgentPlan() {
         break;
       }
     }
+    _updateTrackIndicator(_agentRec.soundscape_title);
   }
   var content = document.getElementById('agent-rec-content');
   if (content) content.classList.add('hidden');
@@ -886,14 +940,14 @@ function labUseTonight() {
   var resultAudio = document.getElementById('lab-result-audio');
   if (resultAudio && resultAudio.src) {
     var title = (document.getElementById('lab-result-title') || {}).textContent || '';
-    var trackCards = document.querySelectorAll('.track-card');
-    for (var i = 0; i < trackCards.length; i++) {
-      if (trackCards[i].querySelector('.track-card-title') &&
-          trackCards[i].querySelector('.track-card-title').textContent === title) {
-        trackCards[i].click();
+    var chips = document.querySelectorAll('.track-chip');
+    for (var i = 0; i < chips.length; i++) {
+      if (chips[i].dataset.title === title) {
+        pickTrack(chips[i]);
         break;
       }
     }
+    _updateTrackIndicator(title);
     switchTab('tonight');
     showToast('Track selected for tonight', 'success');
   }

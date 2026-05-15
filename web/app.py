@@ -368,6 +368,18 @@ def create_app(agent_runner=None):
             return jsonify(result), 404
         return jsonify(result)
 
+    @app.route("/api/music/<track_id>/visibility", methods=["POST"])
+    @require_auth
+    def api_music_visibility(track_id):
+        from db.tracks import set_track_visibility
+        data = request.get_json(force=True)
+        visibility = data.get("visibility")
+        uid = get_user_id()
+        ok, msg = set_track_visibility(track_id, visibility, uid)
+        if not ok:
+            return jsonify({"error": msg}), 400
+        return jsonify({"status": "ok", "visibility": visibility})
+
     @app.route("/api/music/archive")
     @require_auth
     def api_music_archive_list():
@@ -427,57 +439,9 @@ def create_app(agent_runner=None):
         mood = data.get("mood", "calm")
         uid = get_user_id()
 
-        from db.sessions import get_recent_sessions, get_sleep_stats
-        from audio.music_gen import list_generated_music
-        recent = get_recent_sessions(uid, limit=5)
-        stats = get_sleep_stats(uid)
-        tracks = list_generated_music()
-
-        if _agent_runner and os.environ.get("GOOGLE_API_KEY"):
-            try:
-                from google import genai
-                client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
-                history_text = ""
-                for s in recent[:5]:
-                    r = s.get("review") or {}
-                    history_text += f"- {s['plan'].get('soundscape_title','?')}: {r.get('rating','?')}/5, {s['actual'].get('duration_minutes',0):.0f}min\n"
-                track_list = ", ".join(t["title"] for t in tracks[:10])
-                prompt = (
-                    f"User mood: {mood}\n"
-                    f"Recent sleep sessions:\n{history_text or 'None yet'}\n"
-                    f"Stats: {stats}\n"
-                    f"Available tracks: {track_list or 'None'}\n\n"
-                    "Recommend a sleep plan. Respond with ONLY valid JSON, no markdown:\n"
-                    '{"soundscape_title": "...", "duration_hours": 7.5, '
-                    '"wind_down": "...", "reasoning": "one sentence"}'
-                )
-                model_name = _load_config().get("agent", {}).get("model", "gemini-flash-latest")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config={"system_instruction": "You are a sleep coach. Be concise.", "temperature": 0.7},
-                )
-                try:
-                    from db.usage import log_api_usage
-                    log_api_usage(user_id=uid, service="gemini", model=model_name,
-                                  cost_usd=0.001, metadata={"purpose": "sleep_recommendation"})
-                except Exception:
-                    pass
-                text = response.text.strip()
-                if text.startswith("```"):
-                    text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-                rec = json.loads(text)
-                return jsonify(rec)
-            except Exception:
-                pass
-
-        default_sound = stats.get("top_sound") or (tracks[0]["title"] if tracks else "Brown Noise")
-        return jsonify({
-            "soundscape_title": default_sound,
-            "duration_hours": 7.5,
-            "wind_down": "4-7-8 breathing for 5 minutes",
-            "reasoning": "Based on your preferences" if stats.get("total_sessions") else "A good starting point for restful sleep",
-        })
+        from agent.agent import get_recommendation
+        rec = get_recommendation(uid, mood)
+        return jsonify(rec)
 
     @app.route("/api/sleep/log", methods=["POST"])
     @require_auth
@@ -908,7 +872,7 @@ def create_app(agent_runner=None):
         data = request.get_json(force=True)
         uid = data.get("uid")
         tier = data.get("tier")
-        if not uid or tier not in ("free", "plus", "admin"):
+        if not uid or tier not in ("free", "plus", "tester", "admin"):
             return jsonify({"error": "Invalid uid or tier"}), 400
         set_user_tier(uid, tier)
         return jsonify({"status": "ok", "tier": tier})

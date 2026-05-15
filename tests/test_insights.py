@@ -14,4 +14,4 @@ def test_insights_fallback_without_mongodb(monkeypatch):
     assert data["available"] is False
     assert data["recommended_mood"] == "calm"
     assert data["stats"]["total_sessions"] == 0
-    assert "MongoDB" in data["summary"]
+    assert "insights" in data["summary"].lower()

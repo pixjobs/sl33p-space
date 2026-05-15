@@ -15,6 +15,7 @@ from db import get_db
 TIER_LIMITS = {
     "free": {"generations_per_month": 2, "chat_per_day": 10},
     "plus": {"generations_per_month": 10, "chat_per_day": 50},
+    "tester": {"generations_per_month": 20, "chat_per_day": 50},
     "admin": {"generations_per_month": 999, "chat_per_day": 999},
 }
 

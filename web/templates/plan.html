@@ -14,6 +14,8 @@
     {% if user_tier %}
       {% if user_tier.type == 'admin' %}
         <span class="tier-badge tier-admin">Admin</span>
+      {% elif user_tier.type == 'tester' %}
+        <span class="tier-badge tier-tester">Tester</span>
       {% else %}
         <span class="tier-badge tier-free">Free</span>
       {% endif %}
@@ -59,7 +61,7 @@
 <nav class="tab-bar" id="tab-bar">
   <button class="tab active" data-tab="tonight" onclick="switchTab('tonight')">Tonight</button>
   <button class="tab" data-tab="insights" onclick="switchTab('insights')">Insights</button>
-  <button class="tab" data-tab="library" onclick="switchTab('library')">Create</button>
+  <button class="tab" data-tab="library" onclick="switchTab('library')">Library</button>
 </nav>
 
 {# ── Tab: Tonight ── #}
