@@ -83,13 +83,17 @@ def create_session(user_id: str, plan: dict,
     return str(result.inserted_id)
 
 
-def start_session(session_id: str, track: str = None) -> bool:
+def start_session(session_id: str, track: str = None,
+                   user_id: str = None) -> bool:
     db = get_db()
     if db is None:
         return False
     now = datetime.now(timezone.utc)
+    query = {"_id": ObjectId(session_id), "status": "planned"}
+    if user_id:
+        query["user_id"] = user_id
     result = db.sleep_sessions.update_one(
-        {"_id": ObjectId(session_id), "status": "planned"},
+        query,
         {"$set": {
             "status": "active",
             "actual.started_at": now,
@@ -100,12 +104,15 @@ def start_session(session_id: str, track: str = None) -> bool:
     return result.modified_count > 0
 
 
-def end_session(session_id: str) -> bool:
+def end_session(session_id: str, user_id: str = None) -> bool:
     db = get_db()
     if db is None:
         return False
     now = datetime.now(timezone.utc)
-    session = db.sleep_sessions.find_one({"_id": ObjectId(session_id)})
+    query = {"_id": ObjectId(session_id)}
+    if user_id:
+        query["user_id"] = user_id
+    session = db.sleep_sessions.find_one(query)
     if not session or session["status"] != "active":
         return False
     started = session["actual"].get("started_at")
@@ -146,7 +153,7 @@ VALID_REVIEW_METRICS = {
 
 
 def review_session(session_id: str, rating: int = None, notes: str = "",
-                   metrics: dict = None) -> bool:
+                   metrics: dict = None, user_id: str = None) -> bool:
     db = get_db()
     if db is None:
         return False
@@ -157,8 +164,11 @@ def review_session(session_id: str, rating: int = None, notes: str = "",
         for key, val in metrics.items():
             if key in VALID_REVIEW_METRICS:
                 review_data["metrics"][key] = val
+    query = {"_id": ObjectId(session_id), "status": "completed"}
+    if user_id:
+        query["user_id"] = user_id
     db.sleep_sessions.update_one(
-        {"_id": ObjectId(session_id), "status": "completed"},
+        query,
         {"$set": {
             "status": "reviewed",
             "review": review_data,
@@ -168,13 +178,16 @@ def review_session(session_id: str, rating: int = None, notes: str = "",
     return True
 
 
-def skip_review(session_id: str) -> bool:
+def skip_review(session_id: str, user_id: str = None) -> bool:
     db = get_db()
     if db is None:
         return False
     now = datetime.now(timezone.utc)
+    query = {"_id": ObjectId(session_id), "status": "completed"}
+    if user_id:
+        query["user_id"] = user_id
     db.sleep_sessions.update_one(
-        {"_id": ObjectId(session_id), "status": "completed"},
+        query,
         {"$set": {
             "status": "reviewed",
             "review": {"skipped": True, "reviewed_at": now},
@@ -299,7 +312,8 @@ def get_sessions_for_month(user_id: str, year: int, month: int) -> list[dict]:
     return results
 
 
-def update_session_factors(session_id: str, factors: list) -> bool:
+def update_session_factors(session_id: str, factors: list,
+                           user_id: str = None) -> bool:
     db = get_db()
     if db is None:
         return False
@@ -307,7 +321,10 @@ def update_session_factors(session_id: str, factors: list) -> bool:
     clean = [f for f in factors if f in valid_factors]
     now = datetime.now(timezone.utc)
     oid = ObjectId(session_id)
-    session = db.sleep_sessions.find_one({"_id": oid})
+    query = {"_id": oid}
+    if user_id:
+        query["user_id"] = user_id
+    session = db.sleep_sessions.find_one(query)
     if not session or session["status"] not in ("completed", "reviewed"):
         return False
     if session.get("review") is None:
@@ -333,13 +350,17 @@ def delete_session(session_id: str, user_id: str) -> bool:
     return result.deleted_count > 0
 
 
-def update_session_notes(session_id: str, notes: str) -> bool:
+def update_session_notes(session_id: str, notes: str,
+                         user_id: str = None) -> bool:
     db = get_db()
     if db is None:
         return False
     now = datetime.now(timezone.utc)
     oid = ObjectId(session_id)
-    session = db.sleep_sessions.find_one({"_id": oid})
+    query = {"_id": oid}
+    if user_id:
+        query["user_id"] = user_id
+    session = db.sleep_sessions.find_one(query)
     if not session or session["status"] not in ("completed", "reviewed"):
         return False
     if session.get("review") is None:

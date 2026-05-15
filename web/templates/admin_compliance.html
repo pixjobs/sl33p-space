@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}sl33p-space — Compliance{% endblock %}
+{% block styles %}
+<style>
+.compliance-section { margin-bottom: 2rem; }
+.compliance-section h2 {
+  font-size: 0.85rem; font-weight: 600; color: rgba(255,255,255,0.7);
+  margin-bottom: 0.75rem; padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.compliance-section h2 .section-icon { font-size: 1rem; }
+.compliance-section h2 .section-count {
+  margin-left: auto; font-size: 0.6rem; font-weight: 400;
+  color: rgba(255,255,255,0.25); font-variant-numeric: tabular-nums;
+}
+
+.compliance-item {
+  display: flex; align-items: flex-start; gap: 0.75rem;
+  padding: 0.6rem 0.75rem; border-radius: 0.5rem;
+  transition: background 0.15s;
+}
+.compliance-item:hover { background: rgba(255,255,255,0.02); }
+
+.compliance-item input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0;
+  border: 1.5px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.03);
+  cursor: pointer; margin-top: 1px;
+  transition: all 0.15s;
+}
+.compliance-item input[type="checkbox"]:checked {
+  background: rgba(52,211,153,0.2); border-color: #34d399;
+}
+.compliance-item input[type="checkbox"]:checked::after {
+  content: '\2713'; display: block; text-align: center;
+  font-size: 12px; line-height: 16px; color: #34d399; font-weight: 700;
+}
+
+.compliance-label { font-size: 0.8rem; color: rgba(255,255,255,0.55); cursor: pointer; line-height: 1.4; }
+.compliance-item input:checked + .compliance-label { color: rgba(255,255,255,0.3); text-decoration: line-through; }
+
+.compliance-progress {
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 2rem;
+  display: flex; align-items: center; gap: 1.5rem;
+}
+.compliance-progress-bar {
+  flex: 1; height: 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.06); overflow: hidden;
+}
+.compliance-progress-fill {
+  height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, #7c5cfc, #34d399);
+  transition: width 0.3s ease;
+}
+.compliance-progress-text {
+  font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.5);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto px-4 py-8">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-white/90">Compliance Checklist</h1>
+    <a href="/admin" class="btn btn-sm btn-ghost">Back to Admin</a>
+  </div>
+
+  <p class="text-xs text-white/25 mb-4">Track regulatory and legal requirements for commercialisation. Progress is saved locally in your browser.</p>
+
+  <div class="compliance-progress" id="progress-bar">
+    <div class="compliance-progress-text" id="progress-text">0 / 0</div>
+    <div class="compliance-progress-bar">
+      <div class="compliance-progress-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+  </div>
+
+  <div class="compliance-section" data-section="privacy">
+    <h2>
+      <span class="section-icon">&#128274;</span> Data Privacy (GDPR / UK GDPR / CCPA)
+      <span class="section-count" id="count-privacy"></span>
+    </h2>
+    <div class="compliance-item"><input type="checkbox" id="c-privacy-policy"><label class="compliance-label" for="c-privacy-policy">Privacy policy published and linked from app</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-cookie-consent"><label class="compliance-label" for="c-cookie-consent">Cookie consent mechanism implemented</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-dpa"><label class="compliance-label" for="c-dpa">Data processing agreement (DPA) template ready</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-data-export"><label class="compliance-label" for="c-data-export">User data export (Subject Access Request) supported</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-data-deletion"><label class="compliance-label" for="c-data-deletion">User data deletion (Right to Erasure) supported</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-retention"><label class="compliance-label" for="c-retention">Data retention policy defined and documented</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-lawful-basis"><label class="compliance-label" for="c-lawful-basis">Lawful basis for processing documented (consent / legitimate interest)</label></div>
+  </div>
+
+  <div class="compliance-section" data-section="health">
+    <h2>
+      <span class="section-icon">&#9764;&#65039;</span> Health &amp; Wellbeing Claims
+      <span class="section-count" id="count-health"></span>
+    </h2>
+    <div class="compliance-item"><input type="checkbox" id="c-medical-device"><label class="compliance-label" for="c-medical-device">Medical device classification review (MHRA / FDA)</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-no-therapeutic"><label class="compliance-label" for="c-no-therapeutic">Avoid therapeutic or medical claims in marketing copy</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-health-disclaimer"><label class="compliance-label" for="c-health-disclaimer">Terms of service include health disclaimer</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-age-restriction"><label class="compliance-label" for="c-age-restriction">Age restrictions and parental consent mechanism</label></div>
+  </div>
+
+  <div class="compliance-section" data-section="content">
+    <h2>
+      <span class="section-icon">&#127925;</span> Content &amp; Intellectual Property
+      <span class="section-count" id="count-content"></span>
+    </h2>
+    <div class="compliance-item"><input type="checkbox" id="c-ai-licensing"><label class="compliance-label" for="c-ai-licensing">AI-generated music licensing terms defined</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-genai-terms"><label class="compliance-label" for="c-genai-terms">Google GenAI / Lyria terms of service compliance verified</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-ugc-policy"><label class="compliance-label" for="c-ugc-policy">User-generated content policy published</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-dmca"><label class="compliance-label" for="c-dmca">DMCA / takedown process documented</label></div>
+  </div>
+
+  <div class="compliance-section" data-section="financial">
+    <h2>
+      <span class="section-icon">&#128176;</span> Financial &amp; Commercial
+      <span class="section-count" id="count-financial"></span>
+    </h2>
+    <div class="compliance-item"><input type="checkbox" id="c-payments"><label class="compliance-label" for="c-payments">Payment processor integration (Stripe / RevenueCat)</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-refund"><label class="compliance-label" for="c-refund">Refund and cancellation policy published</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-tos"><label class="compliance-label" for="c-tos">Terms of service published and accepted at sign-up</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-vat"><label class="compliance-label" for="c-vat">VAT / sales tax handling for target markets</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-auto-renew"><label class="compliance-label" for="c-auto-renew">Subscription auto-renewal disclosure (Apple / Google policy)</label></div>
+  </div>
+
+  <div class="compliance-section" data-section="security">
+    <h2>
+      <span class="section-icon">&#128737;&#65039;</span> Infrastructure &amp; Security
+      <span class="section-count" id="count-security"></span>
+    </h2>
+    <div class="compliance-item"><input type="checkbox" id="c-idor"><label class="compliance-label" for="c-idor">IDOR protection — all session mutations verify user ownership</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-auth-routes"><label class="compliance-label" for="c-auth-routes">All API routes require authentication</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-rate-limit"><label class="compliance-label" for="c-rate-limit">Rate limiting on expensive endpoints (music gen, AI chat)</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-sec-headers"><label class="compliance-label" for="c-sec-headers">Security headers (X-Content-Type-Options, X-Frame-Options, HSTS, Referrer-Policy)</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-cookie-sec"><label class="compliance-label" for="c-cookie-sec">Session cookies hardened (HttpOnly, SameSite, Secure)</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-error-leak"><label class="compliance-label" for="c-error-leak">Error messages sanitised — no stack traces or internal details exposed</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-prompt-sanitise"><label class="compliance-label" for="c-prompt-sanitise">AI prompt sanitisation (vocal/genre safety filters)</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-soc2"><label class="compliance-label" for="c-soc2">SOC 2 readiness assessment</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-pentest"><label class="compliance-label" for="c-pentest">Penetration testing scheduled or completed</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-incident"><label class="compliance-label" for="c-incident">Incident response plan documented</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-encryption"><label class="compliance-label" for="c-encryption">Data encryption at rest and in transit verified</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-secrets"><label class="compliance-label" for="c-secrets">Secrets management audit completed</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-backup"><label class="compliance-label" for="c-backup">Backup and disaster recovery plan documented</label></div>
+  </div>
+
+  <div class="compliance-section" data-section="accessibility">
+    <h2>
+      <span class="section-icon">&#9855;</span> Accessibility
+      <span class="section-count" id="count-accessibility"></span>
+    </h2>
+    <div class="compliance-item"><input type="checkbox" id="c-wcag"><label class="compliance-label" for="c-wcag">WCAG 2.1 AA audit completed</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-screenreader"><label class="compliance-label" for="c-screenreader">Screen reader compatibility verified</label></div>
+    <div class="compliance-item"><input type="checkbox" id="c-keyboard"><label class="compliance-label" for="c-keyboard">Keyboard navigation support</label></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var STORAGE_KEY = 'sl33p-compliance';
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+    catch(e) { return {}; }
+  }
+
+  function save(state) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  var state = load();
+  var boxes = document.querySelectorAll('.compliance-item input[type="checkbox"]');
+
+  boxes.forEach(function(cb) {
+    if (state[cb.id]) cb.checked = true;
+    cb.addEventListener('change', function() {
+      state[cb.id] = cb.checked;
+      save(state);
+      updateCounts();
+    });
+  });
+
+  function updateCounts() {
+    var total = boxes.length;
+    var checked = 0;
+    boxes.forEach(function(cb) { if (cb.checked) checked++; });
+
+    document.getElementById('progress-text').textContent = checked + ' / ' + total;
+    var pct = total > 0 ? Math.round((checked / total) * 100) : 0;
+    document.getElementById('progress-fill').style.width = pct + '%';
+
+    document.querySelectorAll('.compliance-section').forEach(function(sec) {
+      var sectionName = sec.dataset.section;
+      var sItems = sec.querySelectorAll('input[type="checkbox"]');
+      var sDone = 0;
+      sItems.forEach(function(cb) { if (cb.checked) sDone++; });
+      var countEl = document.getElementById('count-' + sectionName);
+      if (countEl) countEl.textContent = sDone + '/' + sItems.length;
+    });
+  }
+
+  updateCounts();
+})();
+</script>
+{% endblock %}

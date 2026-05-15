@@ -158,16 +158,38 @@ _VOCAL_ALLOW = re.compile(
     re.IGNORECASE,
 )
 
+_GENRE_BLOCK = re.compile(
+    r'\b(pop\s+(?:song|music|track)|rock\s+(?:song|music)|metal|punk|'
+    r'edm|techno|trance|house\s+music|dubstep|drum\s*(?:and|&|n)\s*bass|dnb|'
+    r'hip\s*hop|trap\s+(?:music|beat)|reggaeton|k-?pop|j-?pop|'
+    r'country\s+(?:song|music)|bluegrass|folk\s+song|'
+    r'jazz\s+(?:song|track)|blues\s+song|r\s*&\s*b|soul\s+song|funk\s+song|'
+    r'disco|dance\s+(?:music|track|song)|club\s+(?:music|track)|rave|'
+    r'ska|grunge|screamo|hardcore|death\s+metal|black\s+metal|'
+    r'latin\s+pop|salsa|cumbia|bachata|merengue|'
+    r'gospel\s+song|worship\s+song|praise\s+song|'
+    r'musical\s+theatre|show\s+tune|jingle|commercial|'
+    r'upbeat\s+party|high\s+energy\s+dance|fast\s+tempo\s+beat)\b',
+    re.IGNORECASE,
+)
+
 
 def _sanitize_prompt(raw: str) -> str:
-    """Strip explicit lyrics/vocal requests while preserving ambient vocal terms."""
+    """Strip vocals and non-ambient genres while preserving ambient vocal terms."""
     if _VOCAL_ALLOW.search(raw):
-        return raw
-    if _VOCAL_BLOCK.search(raw):
+        pass
+    elif _VOCAL_BLOCK.search(raw):
         log.info("Sanitised vocal/lyrics request from prompt")
-        cleaned = _VOCAL_BLOCK.sub('', raw).strip()
-        cleaned = re.sub(r'\s{2,}', ' ', cleaned)
-        return f"{cleaned}. Wordless, instrumental"
+        raw = _VOCAL_BLOCK.sub('', raw).strip()
+        raw = re.sub(r'\s{2,}', ' ', raw)
+        raw = f"{raw}. Wordless, instrumental"
+
+    if _GENRE_BLOCK.search(raw):
+        log.info("Sanitised non-ambient genre from prompt")
+        raw = _GENRE_BLOCK.sub('', raw).strip()
+        raw = re.sub(r'\s{2,}', ' ', raw)
+        raw = f"{raw}. Ambient, sleep-appropriate, instrumental"
+
     return raw
 
 
@@ -199,7 +221,7 @@ def generate_music(prompt: str, title: str = "",
     max_per_user = cfg.get("max_tracks_per_user", MAX_TRACKS_PER_USER)
     max_total = cfg.get("max_tracks_total", MAX_TRACKS_TOTAL)
 
-    prompt = _sanitize_prompt(prompt)[:300]
+    prompt = _sanitize_prompt(prompt)[:500]
     enriched = _enrich_prompt(prompt)
     full_prompt = f"{enriched}\n\n{SLEEP_STYLE}"
     key = _cache_key(full_prompt)

@@ -166,15 +166,16 @@ def gift_credits(from_uid: str, to_uid: str, amount: int,
 
     new_balance = add_credits(to_uid, amount, source="gift")
 
-    db.credit_gifts.insert_one({
-        "from_uid": from_uid,
-        "to_uid": to_uid,
-        "from_name": from_name,
-        "amount": amount,
-        "source": "admin",
-        "seen": False,
-        "created_at": datetime.now(timezone.utc),
-    })
+    if from_uid != to_uid:
+        db.credit_gifts.insert_one({
+            "from_uid": from_uid,
+            "to_uid": to_uid,
+            "from_name": from_name,
+            "amount": amount,
+            "source": "admin",
+            "seen": False,
+            "created_at": datetime.now(timezone.utc),
+        })
 
     return new_balance
 

@@ -35,7 +35,16 @@ def init_auth(app):
     except Exception as e:
         app.logger.warning(f"Firebase init failed ({e}) — auth will reject all requests")
 
-    app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
+    secret = os.environ.get("FLASK_SECRET_KEY")
+    if not secret:
+        import hashlib
+        project_id = os.environ.get("FIREBASE_PROJECT_ID", "sl33p-dev")
+        secret = hashlib.sha256(f"sl33p-{project_id}".encode()).hexdigest()
+    app.secret_key = secret
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    if os.environ.get("FLASK_ENV") == "production" or os.environ.get("K_SERVICE"):
+        app.config["SESSION_COOKIE_SECURE"] = True
 
     @app.before_request
     def _set_user():
@@ -82,8 +91,8 @@ def init_auth(app):
             session["user"] = user
             _sync_user_to_db(user)
             return jsonify({"ok": True})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 401
+        except Exception:
+            return jsonify({"error": "Invalid or expired token"}), 401
 
     @app.route("/api/auth/signout", methods=["POST"])
     def destroy_session():

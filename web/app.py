@@ -1,6 +1,9 @@
+import functools
 import json
 import os
 import threading
+import time
+from collections import defaultdict
 from datetime import date, datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
 from web.auth import init_auth, require_auth, require_login, require_admin, get_user_id, get_current_user, is_admin
@@ -8,6 +11,29 @@ from web.auth import init_auth, require_auth, require_login, require_admin, get_
 _agent_runner = None
 _seeding = False
 _last_seed_check = 0.0
+
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+_rate_lock = threading.Lock()
+
+
+def rate_limit(max_calls: int, window_seconds: int):
+    """Simple in-memory per-user rate limiter."""
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            uid = get_user_id()
+            key = f"{f.__name__}:{uid}"
+            now = time.monotonic()
+            with _rate_lock:
+                bucket = _rate_buckets[key]
+                cutoff = now - window_seconds
+                _rate_buckets[key] = [t for t in bucket if t > cutoff]
+                if len(_rate_buckets[key]) >= max_calls:
+                    return jsonify({"error": "Rate limit exceeded. Please try again later."}), 429
+                _rate_buckets[key].append(now)
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def _load_config() -> dict:
@@ -28,6 +54,15 @@ def create_app(agent_runner=None):
         static_folder=os.path.join(os.path.dirname(__file__), "static"),
     )
     init_auth(app)
+
+    @app.after_request
+    def _security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if os.environ.get("K_SERVICE"):
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
 
     @app.after_request
     def _maybe_seed(response):
@@ -161,6 +196,7 @@ def create_app(agent_runner=None):
 
     @app.route("/api/chat", methods=["POST"])
     @require_auth
+    @rate_limit(max_calls=20, window_seconds=60)
     def api_chat():
         data = request.get_json(force=True)
         message = data.get("message", "").strip()
@@ -175,6 +211,7 @@ def create_app(agent_runner=None):
 
     @app.route("/api/music/generate", methods=["POST"])
     @require_login
+    @rate_limit(max_calls=5, window_seconds=3600)
     def api_music_generate():
         from audio.music_gen import generate_music
         from db.tiers import check_generation_allowance, consume_generation
@@ -195,6 +232,7 @@ def create_app(agent_runner=None):
         return jsonify(result)
 
     @app.route("/api/music/library")
+    @require_auth
     def api_music_library():
         scope = request.args.get("scope", "all")
         uid = get_user_id()
@@ -237,11 +275,14 @@ def create_app(agent_runner=None):
         return jsonify(result)
 
     @app.route("/api/music/archive")
+    @require_auth
     def api_music_archive_list():
         from audio.music_gen import list_archived_music
         return jsonify(list_archived_music())
 
     @app.route("/api/music/suggest")
+    @require_auth
+    @rate_limit(max_calls=10, window_seconds=60)
     def api_music_suggest():
         from audio.music_gen import suggest_prompts, list_generated_music
         existing = [t["title"] for t in list_generated_music()]
@@ -255,6 +296,8 @@ def create_app(agent_runner=None):
         return jsonify(result)
 
     @app.route("/api/music/suggest-variation", methods=["POST"])
+    @require_auth
+    @rate_limit(max_calls=10, window_seconds=60)
     def api_music_suggest_variation():
         from audio.music_gen import suggest_variation
         data = request.get_json(force=True)
@@ -284,6 +327,7 @@ def create_app(agent_runner=None):
 
     @app.route("/api/sleep/recommend", methods=["POST"])
     @require_auth
+    @rate_limit(max_calls=10, window_seconds=60)
     def api_sleep_recommend():
         data = request.get_json(force=True)
         mood = data.get("mood", "calm")
@@ -414,7 +458,7 @@ def create_app(agent_runner=None):
         sid = data.get("session_id")
         track = data.get("track")
         if sid:
-            start_session(sid, track=track)
+            start_session(sid, track=track, user_id=get_user_id())
         return jsonify({"status": "ok"})
 
     @app.route("/api/sleep/end", methods=["POST"])
@@ -422,12 +466,13 @@ def create_app(agent_runner=None):
     def api_sleep_end():
         from db.sessions import end_session, get_active_session
         data = request.get_json(force=True)
+        uid = get_user_id()
         sid = data.get("session_id")
         if not sid:
-            session = get_active_session(get_user_id())
+            session = get_active_session(uid)
             sid = session["_id"] if session else None
         if sid:
-            end_session(sid)
+            end_session(sid, user_id=uid)
         return jsonify({"status": "ok"})
 
     @app.route("/api/sleep/review", methods=["POST"])
@@ -438,16 +483,17 @@ def create_app(agent_runner=None):
         sid = data.get("session_id")
         if not sid:
             return jsonify({"error": "session_id required"}), 400
+        uid = get_user_id()
         if data.get("skip"):
-            skip_review(sid)
+            skip_review(sid, user_id=uid)
         else:
             rating = int(data.get("rating", 3))
             metrics = data.get("metrics") or None
             notes = data.get("notes") or ""
-            review_session(sid, rating=rating, notes=notes, metrics=metrics)
+            review_session(sid, rating=rating, notes=notes, metrics=metrics, user_id=uid)
             factors = data.get("factors")
             if factors is not None:
-                update_session_factors(sid, factors)
+                update_session_factors(sid, factors, user_id=uid)
         return jsonify({"status": "ok"})
 
     @app.route("/api/sleep/review-schema")
@@ -502,7 +548,7 @@ def create_app(agent_runner=None):
         factors = data.get("factors", [])
         if not sid:
             return jsonify({"error": "session_id required"}), 400
-        if update_session_factors(sid, factors):
+        if update_session_factors(sid, factors, user_id=get_user_id()):
             return jsonify({"status": "ok"})
         return jsonify({"error": "Could not update"}), 400
 
@@ -515,7 +561,7 @@ def create_app(agent_runner=None):
         notes = data.get("notes", "")
         if not sid:
             return jsonify({"error": "session_id required"}), 400
-        if update_session_notes(sid, notes):
+        if update_session_notes(sid, notes, user_id=get_user_id()):
             return jsonify({"status": "ok"})
         return jsonify({"error": "Could not update"}), 400
 
@@ -700,6 +746,11 @@ def create_app(agent_runner=None):
     def admin_dashboard():
         from db.admin import get_platform_stats
         return render_template("admin.html", stats=get_platform_stats())
+
+    @app.route("/admin/compliance")
+    @require_admin
+    def admin_compliance():
+        return render_template("admin_compliance.html")
 
     @app.route("/api/admin/stats")
     @require_admin

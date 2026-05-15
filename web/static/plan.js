@@ -699,7 +699,7 @@ var _labColourDescriptions = {
 function labUpdateCharCount() {
   var txt = document.getElementById('lab-custom-text');
   var counter = document.getElementById('lab-char-count');
-  if (txt && counter) counter.textContent = txt.value.length + '/200';
+  if (txt && counter) counter.textContent = txt.value.length + '/500';
 }
 
 function labSelectTheme(el) {
