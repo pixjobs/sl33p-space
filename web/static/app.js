@@ -10,7 +10,27 @@ if (window.__firebaseConfig) {
     var username = document.getElementById('nav-username');
 
     if (user) {
-      user.getIdToken().then(function(token) { _authToken = token; });
+      user.getIdToken().then(function(token) {
+        _authToken = token;
+        return fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token })
+        });
+      }).then(function() {
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) api('/api/user/timezone', 'POST', { timezone: tz });
+
+        var refCode = localStorage.getItem('sl33p_ref');
+        if (refCode) {
+          localStorage.removeItem('sl33p_ref');
+          api('/api/user/redeem-referral', 'POST', { code: refCode }).then(function(res) {
+            if (res && res.status === 'ok') showToast('Referral bonus: +1 credit!', 'success');
+          });
+        }
+
+        if (window.location.pathname === '/') window.location.href = '/plan';
+      });
       if (signInBtn) signInBtn.style.display = 'none';
       if (userInfo) userInfo.style.display = '';
       if (avatar) { avatar.src = user.photoURL || ''; avatar.style.display = user.photoURL ? '' : 'none'; }
@@ -37,8 +57,58 @@ function signInWithGoogle() {
   });
 }
 
+function signInWithEmail(email, password) {
+  if (!window.__firebaseConfig) return;
+  var errEl = document.getElementById('auth-error');
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  firebase.auth().signInWithEmailAndPassword(email, password).catch(function(err) {
+    var msg = err.code === 'auth/user-not-found' ? 'No account found with this email.'
+            : err.code === 'auth/wrong-password' ? 'Incorrect password.'
+            : err.code === 'auth/invalid-email' ? 'Invalid email address.'
+            : err.code === 'auth/invalid-credential' ? 'Incorrect email or password.'
+            : err.code === 'auth/too-many-requests' ? 'Too many attempts. Try again later.'
+            : err.message;
+    if (errEl) { errEl.textContent = msg; errEl.style.display = ''; }
+  });
+}
+
+function signUpWithEmail(email, password, displayName) {
+  if (!window.__firebaseConfig) return;
+  var errEl = document.getElementById('auth-error');
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+  firebase.auth().createUserWithEmailAndPassword(email, password).then(function(cred) {
+    if (displayName && cred.user) {
+      return cred.user.updateProfile({ displayName: displayName });
+    }
+  }).catch(function(err) {
+    var msg = err.code === 'auth/email-already-in-use' ? 'An account with this email already exists.'
+            : err.code === 'auth/weak-password' ? 'Password must be at least 6 characters.'
+            : err.code === 'auth/invalid-email' ? 'Invalid email address.'
+            : err.message;
+    if (errEl) { errEl.textContent = msg; errEl.style.display = ''; }
+  });
+}
+
+function resetPassword(email) {
+  if (!window.__firebaseConfig) return;
+  var errEl = document.getElementById('auth-error');
+  if (!email) {
+    if (errEl) { errEl.textContent = 'Enter your email address first.'; errEl.style.display = ''; }
+    return;
+  }
+  firebase.auth().sendPasswordResetEmail(email).then(function() {
+    if (errEl) { errEl.textContent = 'Password reset email sent. Check your inbox.'; errEl.style.display = ''; errEl.style.color = 'rgba(52,211,153,0.8)'; }
+  }).catch(function(err) {
+    var msg = err.code === 'auth/user-not-found' ? 'No account found with this email.'
+            : err.code === 'auth/invalid-email' ? 'Invalid email address.'
+            : err.message;
+    if (errEl) { errEl.textContent = msg; errEl.style.display = ''; errEl.style.color = ''; }
+  });
+}
+
 function signOutUser() {
   if (!window.__firebaseConfig) return;
+  fetch('/api/auth/signout', { method: 'POST' });
   firebase.auth().signOut();
 }
 
@@ -90,6 +160,60 @@ function showToast(message, type, duration) {
 
 // ───── Chat ─────
 
+function _renderMd(text) {
+  // Sanitize first: escape HTML entities to prevent XSS
+  var s = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Then apply safe markdown transformations on escaped content
+  s = s
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  var lines = s.split('\n');
+  var html = '', inList = false;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var bullet = line.match(/^\s*[-*]\s+(.+)/);
+    if (bullet) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += '<li>' + bullet[1] + '</li>';
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      if (line.trim()) html += '<p>' + line.trim() + '</p>';
+    }
+  }
+  if (inList) html += '</ul>';
+  return html;
+}
+
+function _addChatRow(container, text, role, opts) {
+  opts = opts || {};
+  var row = document.createElement('div');
+  row.className = 'coach-row coach-' + role;
+  var avatar = document.createElement('div');
+  avatar.className = 'coach-avatar';
+  avatar.textContent = role === 'agent' ? 'S' : 'Y';
+  var bubble = document.createElement('div');
+  bubble.className = 'coach-bubble' + (opts.thinking ? ' thinking' : '');
+  if (opts.raw) {
+    bubble.textContent = text;
+  } else {
+    // Content is safe: _renderMd escapes HTML entities before applying formatting
+    bubble.innerHTML = _renderMd(text);  // nosemgrep: innerHTML-xss (input is entity-escaped)
+  }
+  row.appendChild(avatar);
+  row.appendChild(bubble);
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+  return { row: row, bubble: bubble };
+}
+
+function sendChatMsg(msg) {
+  var input = document.getElementById('chat-input');
+  if (input) { input.value = msg; }
+  if (input && input.form) input.form.dispatchEvent(new Event('submit', { cancelable: true }));
+}
+
 async function sendChat(e) {
   e.preventDefault();
   var input = document.getElementById('chat-input');
@@ -97,43 +221,38 @@ async function sendChat(e) {
   if (!msg) return;
 
   var messages = document.getElementById('chat-messages');
-  var userMsg = document.createElement('div');
-  userMsg.className = 'msg msg-user';
-  userMsg.textContent = msg;
-  messages.appendChild(userMsg);
+  _addChatRow(messages, msg, 'user', { raw: true });
   input.value = '';
-  messages.scrollTop = messages.scrollHeight;
 
-  var thinking = document.createElement('div');
-  thinking.className = 'msg msg-agent msg-thinking';
-  thinking.textContent = 'Thinking...';
-  messages.appendChild(thinking);
-  messages.scrollTop = messages.scrollHeight;
+  var quick = document.getElementById('coach-quick');
+  if (quick) quick.style.display = 'none';
+
+  var ref = _addChatRow(messages, 'Thinking...', 'agent', { raw: true, thinking: true });
 
   try {
     var data = await api('/api/chat', 'POST', { message: msg });
-    thinking.classList.remove('msg-thinking');
     var resp = data.response || data.error || 'No response';
-    thinking.textContent = resp;
+    ref.bubble.classList.remove('thinking');
+    // Response from our own API, entity-escaped in _renderMd before formatting
+    ref.bubble.innerHTML = _renderMd(resp);  // nosemgrep: innerHTML-xss (input is entity-escaped)
     messages.scrollTop = messages.scrollHeight;
 
     if (resp.includes('/sleep?')) {
       var match = resp.match(/(\/sleep\?[^\s"']+)/);
       if (match) {
-        var link = document.createElement('div');
-        link.className = 'msg msg-agent';
+        var linkRow = _addChatRow(messages, '', 'agent', { raw: true });
         var a = document.createElement('a');
         a.href = match[1];
-        a.style.color = 'var(--accent)';
         a.textContent = 'Start session →';
-        link.appendChild(a);
-        messages.appendChild(link);
-        messages.scrollTop = messages.scrollHeight;
+        a.style.color = '#a78bfa';
+        a.style.textDecoration = 'underline';
+        linkRow.bubble.textContent = '';
+        linkRow.bubble.appendChild(a);
       }
     }
   } catch (err) {
-    thinking.classList.remove('msg-thinking');
-    thinking.textContent = 'Error: ' + err.message;
+    ref.bubble.classList.remove('thinking');
+    ref.bubble.textContent = 'Error: ' + err.message;
   }
 }
 
@@ -276,14 +395,14 @@ async function _refreshTrackList() {
     trackStrip.textContent = '';
     if (tracks.length === 0) {
       var emptyMsg = document.createElement('span');
-      emptyMsg.className = 'text-xs text-white/30 py-2';
+      emptyMsg.className = 'col-span-2 text-xs text-white/30 py-2';
       emptyMsg.textContent = 'No tracks yet — generate one below';
       trackStrip.appendChild(emptyMsg);
     } else {
       tracks.forEach(function(track) {
         var energy = track.energy_level || 'low';
         var chip = document.createElement('button');
-        chip.className = 'track-chip shrink-0 px-4 py-3 bg-transparent border border-border rounded-xl cursor-pointer transition-all min-w-[130px] text-left hover:border-border-hover hover:bg-surface-hover group';
+        chip.className = 'track-chip px-3 py-2.5 bg-transparent border border-border rounded-xl cursor-pointer transition-all text-left hover:border-border-hover hover:bg-surface-hover group';
         chip.dataset.id = track.id;
         chip.dataset.src = track.src || ('/media/music/' + track.filename);
         chip.dataset.title = track.title;
@@ -293,7 +412,7 @@ async function _refreshTrackList() {
           if (typeof pickTrack === 'function') pickTrack(chip);
         });
         var header = document.createElement('div');
-        header.className = 'flex items-center gap-1.5 mb-1';
+        header.className = 'flex items-center gap-1.5 mb-0.5';
         var dot = document.createElement('span');
         dot.className = 'energy-dot e-' + energy;
         var eLbl = document.createElement('span');
@@ -302,13 +421,13 @@ async function _refreshTrackList() {
         header.appendChild(dot);
         header.appendChild(eLbl);
         var t = document.createElement('span');
-        t.className = 'block text-[0.8rem] font-medium text-white/80 truncate';
+        t.className = 'block text-[0.75rem] font-medium text-white/80 truncate';
         t.textContent = track.title;
         chip.appendChild(header);
         chip.appendChild(t);
         if (track.mood_tags && track.mood_tags.length) {
           var m = document.createElement('span');
-          m.className = 'block text-[0.55rem] text-white/20 mt-1';
+          m.className = 'block text-[0.5rem] text-white/20 mt-0.5 truncate';
           m.textContent = track.mood_tags.join(' · ');
           chip.appendChild(m);
         }

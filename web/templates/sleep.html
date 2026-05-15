@@ -79,48 +79,33 @@
   margin-bottom: 1.5rem;
 }
 
-/* ───── Breathing Guide ───── */
-.sleep-breathing {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
+/* ───── Waveform Visualiser ───── */
+.viz-container {
+  position: relative;
+  width: 220px;
+  height: 220px;
   margin-bottom: 1.5rem;
 }
-
-.breath-visual {
-  width: 48px;
-  height: 48px;
+.viz-canvas {
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 183, 77, 0.25);
-  box-shadow: 0 0 15px rgba(255, 160, 50, 0.05);
-  transition: transform 4s ease, box-shadow 4s ease;
 }
-
-.breath-visual.inhale {
-  transform: scale(1.8);
-  box-shadow: 0 0 30px rgba(255, 183, 77, 0.2);
-  transition-duration: 4s;
-}
-
-.breath-visual.hold {
-  transform: scale(1.8);
-  box-shadow: 0 0 30px rgba(255, 183, 77, 0.2);
-  transition-duration: 0.5s;
-}
-
-.breath-visual.exhale {
-  transform: scale(1);
-  box-shadow: 0 0 15px rgba(255, 160, 50, 0.05);
-  transition-duration: 8s;
-}
-
 .breath-text {
+  position: absolute;
+  bottom: -1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 2px;
   color: rgba(255, 220, 180, 0.25);
   font-weight: 500;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .viz-container { width: 160px; height: 160px; }
 }
 
 /* ───── Timer Display ───── */
@@ -238,6 +223,17 @@
 
 .ctrl-timer-btns { display: flex; gap: 0.2rem; }
 
+.ctrl-btn.autoplay-blocked {
+  animation: pulse-play 1.5s ease-in-out infinite;
+  background: rgba(124, 92, 252, 0.15);
+  border-color: rgba(124, 92, 252, 0.4);
+  color: rgba(124, 92, 252, 0.9);
+}
+@keyframes pulse-play {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(124,92,252,0.3); }
+  50% { transform: scale(1.15); box-shadow: 0 0 20px 4px rgba(124,92,252,0.2); }
+}
+
 @media (max-width: 640px) {
   .sleep-clock { font-size: 3.5rem; letter-spacing: 3px; }
   .sleep-telemetry { gap: 1.5rem; }
@@ -245,7 +241,8 @@
   .controls-inner { gap: 0.35rem; }
   .ctrl-btn { width: 34px; height: 34px; }
   .ctrl-volume input[type="range"] { width: 50px; }
-  .ctrl-timer-btns { display: none; }
+  .ctrl-timer-btns { display: flex; overflow-x: auto; gap: 0.25rem; }
+  .ctrl-btn-sm { min-height: 34px; min-width: 40px; font-size: 0.6rem; }
 }
 </style>
 {% endblock %}
@@ -284,9 +281,9 @@
     <!-- Status readout -->
     <div class="status-readout" id="status-readout">Soundscape active</div>
 
-    <!-- Breathing Guide -->
-    <div class="sleep-breathing" id="sleep-breathing">
-      <div class="breath-visual" id="breath-circle"></div>
+    <!-- Waveform Visualiser + Breathing -->
+    <div class="viz-container" id="viz-container">
+      <canvas class="viz-canvas" id="viz-canvas"></canvas>
       <div class="breath-text" id="breath-label">Breathe in</div>
     </div>
 
@@ -321,14 +318,26 @@
         <button class="ctrl-btn ctrl-btn-sm" onclick="immSetTimer(30)">30m</button>
         <button class="ctrl-btn ctrl-btn-sm" onclick="immSetTimer(60)">1h</button>
         <button class="ctrl-btn ctrl-btn-sm" onclick="immSetTimer(120)">2h</button>
-        <button class="ctrl-btn ctrl-btn-sm" onclick="immSetTimer(0)">Off</button>
+        <button class="ctrl-btn ctrl-btn-sm" onclick="immSetTimer(480)" title="8 hours">8h</button>
+        <button class="ctrl-btn ctrl-btn-sm" onclick="immSetTimer(600)" title="10 hours (max)">Max</button>
       </div>
       <button class="ctrl-btn ctrl-end" id="ctrl-end" onclick="immEndSleep()">End Sleep</button>
     </div>
   </div>
 
+  <!-- Tap-to-start overlay (mobile autoplay blocked) -->
+  <div id="tap-overlay" style="display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;cursor:pointer" onclick="_dismissOverlay()">
+    <div style="text-align:center;pointer-events:none">
+      <div style="width:80px;height:80px;margin:0 auto 1rem;border-radius:50%;background:rgba(124,92,252,0.2);border:2px solid rgba(124,92,252,0.5);display:flex;align-items:center;justify-content:center;animation:pulse-play 1.5s ease-in-out infinite">
+        <svg viewBox="0 0 24 24" fill="rgba(124,92,252,0.9)" style="width:36px;height:36px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </div>
+      <div style="color:rgba(255,255,255,0.7);font-size:0.85rem;font-weight:500">Tap to start soundscape</div>
+    </div>
+  </div>
+
   <!-- Audio element (no loop — playlist handles progression) -->
-  <audio id="imm-audio" preload="auto"></audio>
+  <audio id="imm-audio" preload="auto" playsinline></audio>
+
 </div>
 
 <script>
@@ -354,6 +363,7 @@ var _imm = {
   elapsedStart: null,
   elapsedInterval: null,
   sessionStart: null,
+  _maxCutoffTriggered: false,
 };
 
 function updateSleepClock() {
@@ -366,18 +376,32 @@ function updateSleepClock() {
 updateSleepClock();
 setInterval(updateSleepClock, 1000);
 
+// ───── Auto-Cutoff ─────
+var _MAX_SESSION_MS = 10 * 60 * 60 * 1000; // 10 hours hard max
+var _DEFAULT_TIMER_MIN = 480; // 8 hours default
+
 // ───── Elapsed Timer ─────
 function updateElapsed() {
   if (!_imm.elapsedStart) return;
-  var elapsed = Math.floor((Date.now() - _imm.elapsedStart) / 60000);
+  var elapsedMs = Date.now() - _imm.elapsedStart;
+  var elapsed = Math.floor(elapsedMs / 60000);
   var el = document.getElementById('tel-duration');
   if (el) {
     if (elapsed < 60) el.textContent = elapsed + 'm';
     else el.textContent = Math.floor(elapsed / 60) + 'h ' + (elapsed % 60) + 'm';
   }
+  if (elapsedMs >= _MAX_SESSION_MS && !_imm._maxCutoffTriggered) {
+    _imm._maxCutoffTriggered = true;
+    _setStatus('Max session reached — ending');
+    fadeOutAudio();
+  }
 }
 
 // ───── Audio Setup ─────
+// Step 1: Queue (load src) → Step 2: Wait for canplay → Step 3: Play on gesture
+var _audioReady = false;
+var _needsGesture = false;
+
 (function initAudio() {
   var audio = document.getElementById('imm-audio');
   if (!audio) return;
@@ -385,50 +409,213 @@ function updateElapsed() {
   audio.volume = 0.7;
 
   audio.addEventListener('play', function() {
+    console.log('[audio] PLAYING', audio.src.slice(-50));
     updatePlayIcon(false);
+    _audioReady = true;
+    _needsGesture = false;
     if (!_imm.elapsedStart) _imm.elapsedStart = Date.now();
     if (!_imm.sessionStart) _imm.sessionStart = new Date();
+    _hideOverlay();
+    _updateMediaSession();
+    _savePlaybackState();
   });
 
   audio.addEventListener('pause', function() { updatePlayIcon(true); });
 
-  // Track ended — advance playlist or loop single track
+  audio.addEventListener('error', function() {
+    var code = audio.error ? audio.error.code : '?';
+    var msg = audio.error ? audio.error.message : '';
+    console.error('[audio] ERROR code=' + code, msg, audio.src.slice(-60));
+    if (_queueTrack._timeout) {
+      clearTimeout(_queueTrack._timeout);
+      _queueTrack._timeout = null;
+    }
+    _audioReady = false;
+    _setStatus('Audio error — try refreshing');
+  });
+
   audio.addEventListener('ended', function() {
-    if (_imm.singleTrackMode) {
+    console.log('[audio] track ended, singleTrackMode=' + _imm.singleTrackMode +
+                ', playlist.length=' + _imm.playlist.length +
+                ', playlistIndex=' + _imm.playlistIndex);
+    // Single track mode uses audio.loop=true so ended shouldn't fire,
+    // but handle it as a safety net
+    if (_imm.singleTrackMode || _imm.playlist.length <= 1) {
       audio.currentTime = 0;
       audio.play().catch(function() {});
       return;
     }
-    if (_imm.playlist.length === 0) return;
+    var prevIndex = _imm.playlistIndex;
     _imm.playlistIndex++;
-    if (_imm.playlistIndex >= _imm.playlist.length) {
-      _imm.playlistIndex = 0;
-    }
-    _loadPlaylistTrack(_imm.playlistIndex);
+    if (_imm.playlistIndex >= _imm.playlist.length) _imm.playlistIndex = 0;
+    console.log('[audio] chaining: track ' + prevIndex + ' → ' + _imm.playlistIndex);
+    _queueTrack(_imm.playlistIndex, true);
     _reportProgress();
   });
 })();
 
-function _loadPlaylistTrack(index) {
+function _setStatus(msg) {
+  var el = document.getElementById('status-readout');
+  if (el) el.textContent = msg;
+  console.log('[status]', msg);
+}
+
+// Queue: set src and wait for canplay
+function _queueTrack(index, autoplay) {
   var audio = document.getElementById('imm-audio');
-  if (!audio || !_imm.playlist.length) return;
-  var track = _imm.playlist[index];
-  if (!track) return;
-  audio.src = track.src || track.gcs_url || '';
-  audio.play().catch(function() {});
+  if (!audio) return;
+  var track, src;
+
+  if (_imm.playlist.length > 0) {
+    track = _imm.playlist[index];
+    if (!track) return;
+    src = track.src || track.gcs_url || '';
+  } else {
+    src = _imm.trackSrc;
+    track = { title: _imm.trackTitle };
+  }
+
+  if (!src) {
+    console.error('[audio] no src for track', index);
+    _setStatus('No audio available');
+    return;
+  }
+
+  // Clear any previous timeout
+  if (_queueTrack._timeout) {
+    clearTimeout(_queueTrack._timeout);
+    _queueTrack._timeout = null;
+  }
+
+  // Remove any stale canplay listeners from a previous queue call
+  if (_queueTrack._pendingHandler) {
+    audio.removeEventListener('canplay', _queueTrack._pendingHandler);
+    _queueTrack._pendingHandler = null;
+  }
+
+  // In multi-track mode, disable native loop so ended event fires for chaining
+  audio.loop = (_imm.singleTrackMode || _imm.playlist.length <= 1);
+
+  console.log('[audio] QUEUE track', index, track.title || '', 'loop=' + audio.loop, src.slice(-50));
+  _setStatus('Loading: ' + (track.title || 'track') + '...');
   _updateTrackDisplay(track, index);
+
+  audio.src = src;
+  audio.load();
+  _audioReady = false;
+
+  function onReady() {
+    audio.removeEventListener('canplay', onReady);
+    _queueTrack._pendingHandler = null;
+    if (_queueTrack._timeout) {
+      clearTimeout(_queueTrack._timeout);
+      _queueTrack._timeout = null;
+    }
+    console.log('[audio] READY (canplay) track=' + index + ' title=' + (track.title || '?'));
+    _audioReady = true;
+    _setStatus((track.title || 'Track') + ' ready');
+
+    if (autoplay) {
+      _startPlayback();
+    }
+  }
+
+  // One-shot listener: when browser has enough data to play
+  _queueTrack._pendingHandler = onReady;
+  audio.addEventListener('canplay', onReady);
+
+  // If the browser already has this resource cached, readyState might already be high
+  if (audio.readyState >= 3) {
+    console.log('[audio] already ready (cached), readyState=' + audio.readyState);
+    onReady();
+  }
+
+  // Timeout: if canplay doesn't fire in 15s, try playing anyway
+  _queueTrack._timeout = setTimeout(function() {
+    _queueTrack._timeout = null;
+    if (!_audioReady) {
+      console.warn('[audio] canplay timeout after 15s, readyState=' + audio.readyState + ', trying play anyway');
+      if (audio.readyState >= 2) {
+        onReady();
+      } else {
+        _setStatus('Slow connection — loading...');
+        // Give it another 15s before giving up
+        _queueTrack._timeout = setTimeout(function() {
+          _queueTrack._timeout = null;
+          if (!_audioReady) {
+            console.error('[audio] giving up on track', index);
+            _setStatus('Failed to load — skipping');
+            // Skip to next track if available
+            if (!_imm.singleTrackMode && _imm.playlist.length > 1) {
+              _imm.playlistIndex++;
+              if (_imm.playlistIndex >= _imm.playlist.length) _imm.playlistIndex = 0;
+              _queueTrack(_imm.playlistIndex, true);
+            }
+          }
+        }, 15000);
+      }
+    }
+  }, 15000);
+}
+
+// Attempt play — if blocked, show overlay and capture next gesture
+function _startPlayback() {
+  var audio = document.getElementById('imm-audio');
+  if (!audio || !audio.src) return;
+
+  console.log('[audio] _startPlayback, readyState=' + audio.readyState);
+  var p = audio.play();
+  if (p) {
+    p.then(function() {
+      console.log('[audio] play() succeeded');
+    }).catch(function(e) {
+      console.warn('[audio] play() blocked:', e.name);
+      _needsGesture = true;
+      _showOverlay();
+      _setStatus('Tap anywhere to start');
+    });
+  }
+}
+
+function _showOverlay() {
+  var overlay = document.getElementById('tap-overlay');
+  if (overlay) overlay.style.display = 'flex';
+  var btn = document.getElementById('ctrl-play');
+  if (btn) btn.classList.add('autoplay-blocked');
+}
+
+function _hideOverlay() {
+  var overlay = document.getElementById('tap-overlay');
+  if (overlay) overlay.style.display = 'none';
+  var btn = document.getElementById('ctrl-play');
+  if (btn) btn.classList.remove('autoplay-blocked');
+}
+
+// Global gesture handler — captures first touch/click to unlock audio
+function _onFirstGesture() {
+  if (!_needsGesture) return;
+  console.log('[audio] gesture captured, starting playback');
+  _needsGesture = false;
+  _hideOverlay();
+  var audio = document.getElementById('imm-audio');
+  if (audio && audio.paused) {
+    audio.play().then(function() {
+      console.log('[audio] gesture play succeeded');
+    }).catch(function(e) {
+      console.warn('[audio] gesture play failed:', e.name);
+    });
+  }
 }
 
 function _updateTrackDisplay(track, index) {
   var telTrack = document.getElementById('tel-track');
-  var statusReadout = document.getElementById('status-readout');
-  var total = _imm.playlist.length;
-  if (telTrack) {
-    telTrack.textContent = (index + 1) + '/' + total;
-  }
-  if (statusReadout) {
-    var role = track.role ? ' · ' + track.role.replace('_', ' ') : '';
-    statusReadout.textContent = 'Track ' + (index + 1) + '/' + total + ': ' + (track.title || 'Untitled') + role;
+  var total = _imm.playlist.length || 1;
+  if (telTrack) telTrack.textContent = total > 1 ? (index + 1) + '/' + total : (track.title || '--').substring(0, 3).toUpperCase();
+  var statusEl = document.getElementById('status-readout');
+  if (statusEl && total > 1) {
+    var role = track.role || '';
+    var roleLabel = role === 'settling' ? 'Settling in' : role === 'transition' ? 'Transitioning' : 'Deep sleep';
+    statusEl.textContent = roleLabel + ' — ' + (track.title || 'Track ' + (index + 1));
   }
 }
 
@@ -438,11 +625,28 @@ function _reportProgress() {
   api('/api/playlist/' + _imm.playlistId + '/progress', 'POST', { tracks_played: played }).catch(function() {});
 }
 
+function _updateMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  var title = 'sl33p-space';
+  var artist = 'Sleep Soundscape';
+  if (_imm.playlist.length > 0) {
+    var track = _imm.playlist[_imm.playlistIndex];
+    if (track) { title = track.title || 'Untitled'; artist = (track.role || 'ambient').replace('_', ' '); }
+  } else if (_imm.trackTitle) {
+    title = _imm.trackTitle;
+  }
+  navigator.mediaSession.metadata = new MediaMetadata({ title: title, artist: artist, album: 'sl33p-space' });
+  navigator.mediaSession.setActionHandler('play', function() { immTogglePlay(); });
+  navigator.mediaSession.setActionHandler('pause', function() { immTogglePlay(); });
+  navigator.mediaSession.setActionHandler('previoustrack', function() { immSkipPrev(); });
+  navigator.mediaSession.setActionHandler('nexttrack', function() { immSkipNext(); });
+}
+
 function immSkipNext() {
   if (_imm.singleTrackMode || _imm.playlist.length <= 1) return;
   _imm.playlistIndex++;
   if (_imm.playlistIndex >= _imm.playlist.length) _imm.playlistIndex = 0;
-  _loadPlaylistTrack(_imm.playlistIndex);
+  _queueTrack(_imm.playlistIndex, true);
   _reportProgress();
 }
 
@@ -455,36 +659,44 @@ function immSkipPrev() {
   }
   _imm.playlistIndex--;
   if (_imm.playlistIndex < 0) _imm.playlistIndex = _imm.playlist.length - 1;
-  _loadPlaylistTrack(_imm.playlistIndex);
+  _queueTrack(_imm.playlistIndex, true);
+}
+
+function _dismissOverlay() {
+  _onFirstGesture();
 }
 
 async function initPlaylist() {
   var audio = document.getElementById('imm-audio');
   if (!audio) return;
 
+  console.log('[playlist] init — playlistId:', _imm.playlistId, 'trackSrc:', _imm.trackSrc ? _imm.trackSrc.slice(-40) : 'none');
+  _setStatus('Loading playlist...');
+
   if (_imm.playlistId) {
     try {
       var data = await api('/api/playlist/' + _imm.playlistId);
       if (data && data.tracks && data.tracks.length > 0) {
+        console.log('[playlist] loaded', data.tracks.length, 'tracks');
         _imm.playlist = data.tracks;
         _imm.playlistIndex = 0;
         _imm.singleTrackMode = false;
-        _loadPlaylistTrack(0);
+        _queueTrack(0, true);
         return;
       }
-    } catch (e) {}
+      console.warn('[playlist] API returned empty tracks');
+    } catch (e) {
+      console.error('[playlist] API error:', e);
+    }
   }
 
   // Fallback: single track mode
   _imm.singleTrackMode = true;
   if (_imm.trackSrc) {
-    audio.src = _imm.trackSrc;
-    audio.play().catch(function() {});
+    _queueTrack(0, true);
+  } else {
+    _setStatus('No tracks available');
   }
-  var telTrack = document.getElementById('tel-track');
-  var statusReadout = document.getElementById('status-readout');
-  if (telTrack) telTrack.textContent = _imm.trackTitle ? _imm.trackTitle.substring(0, 3).toUpperCase() : '--';
-  if (statusReadout && _imm.trackTitle) statusReadout.textContent = 'Playing: ' + _imm.trackTitle;
 }
 
 function updatePlayIcon(paused) {
@@ -511,13 +723,22 @@ function updatePlayIcon(paused) {
 function immTogglePlay() {
   var audio = document.getElementById('imm-audio');
   if (!audio) return;
-  if (audio.paused) { audio.play().catch(function() {}); }
-  else { audio.pause(); }
+  _hideOverlay();
+  _needsGesture = false;
+  if (audio.paused) {
+    audio.play().catch(function(e) {
+      console.warn('[audio] toggle play failed:', e.name);
+    });
+  } else {
+    audio.pause();
+  }
 }
 
 function immToggleLoop() {
   var audio = document.getElementById('imm-audio');
   if (!audio) return;
+  // Don't allow loop toggle in multi-track mode (chaining handles repeating)
+  if (!_imm.singleTrackMode && _imm.playlist.length > 1) return;
   audio.loop = !audio.loop;
   var btn = document.getElementById('ctrl-loop');
   if (btn) btn.classList.toggle('active', audio.loop);
@@ -537,6 +758,13 @@ function stopApodSlideshow() {
   if (b) { b.style.backgroundImage = ''; b.classList.remove('kb-active'); b.style.opacity = '0'; }
 }
 
+var _apodFallbacks = [
+  { url: 'https://apod.nasa.gov/apod/image/2401/PillsofCreation_Webb_960.jpg', title: 'Pillars of Creation' },
+  { url: 'https://apod.nasa.gov/apod/image/2304/Carina_Webb_960.jpg', title: 'Carina Nebula' },
+  { url: 'https://apod.nasa.gov/apod/image/2207/STScI-UDF_960.jpg', title: 'Hubble Deep Field' },
+  { url: 'https://apod.nasa.gov/apod/image/2301/OrionNebula_Webb_960.jpg', title: 'Orion Nebula' }
+];
+
 function apodSlideshow() {
   if (_imm.apodImages.length === 0) return;
 
@@ -545,6 +773,7 @@ function apodSlideshow() {
   if (!layerA || !layerB) return;
 
   function showImage(url, isLayerA) {
+    console.log('[slideshow] showing:', url.slice(-40), isLayerA ? 'A' : 'B');
     if (isLayerA) {
       layerA.style.backgroundImage = 'url(' + url + ')';
       layerA.classList.add('kb-active');
@@ -575,7 +804,7 @@ function apodSlideshow() {
     _imm.apodLayerA = !_imm.apodLayerA;
     showImage(_imm.apodImages[_imm.apodIndex].url, _imm.apodLayerA);
     preloadNext();
-  }, 45000);
+  }, 30000);
 }
 
 async function loadApodBackground() {
@@ -583,44 +812,152 @@ async function loadApodBackground() {
     var data = await api('/api/scenes/cosmos');
     if (data && data.images && data.images.length > 0) {
       _imm.apodImages = data.images;
-      apodSlideshow();
+      console.log('[slideshow] loaded', data.images.length, 'APOD images');
+    } else {
+      _imm.apodImages = _apodFallbacks;
+      console.log('[slideshow] using fallback images');
     }
-  } catch (e) {}
+  } catch (e) {
+    _imm.apodImages = _apodFallbacks;
+    console.log('[slideshow] API error, using fallbacks');
+  }
+  apodSlideshow();
 }
 
-// ───── Breathing Guide ─────
-function startBreathing() {
-  if (_imm.breathTimer) return;
-  var circle = document.getElementById('breath-circle');
-  var label = document.getElementById('breath-label');
-  var guide = document.getElementById('sleep-breathing');
-  if (!circle || !label || !guide) return;
+// ───── Waveform Visualiser + Breathing ─────
+// NOTE: No createMediaElementSource — that hijacks the <audio> element
+// through the AudioContext, which suspends on screen lock and kills playback.
+// The visualizer uses breathing animation only (no FFT data needed).
+var _viz = {
+  ctx: null, canvas: null,
+  animId: null,
+  breathPhase: 0, breathT: 0, hueOffset: 0,
+};
 
-  guide.style.display = '';
+function initVisualiser() {
+  var canvas = document.getElementById('viz-canvas');
+  if (!canvas) return;
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  _viz.canvas = canvas;
+  _viz.ctx = canvas.getContext('2d');
+  _viz.ctx.scale(dpr, dpr);
+  _viz.w = rect.width;
+  _viz.h = rect.height;
+}
 
-  function cycle() {
-    label.textContent = 'Breathe in';
-    circle.className = 'breath-visual inhale';
-    _imm.breathTimer = setTimeout(function() {
-      label.textContent = 'Hold';
-      circle.className = 'breath-visual hold';
-      _imm.breathTimer = setTimeout(function() {
-        label.textContent = 'Breathe out';
-        circle.className = 'breath-visual exhale';
-        _imm.breathTimer = setTimeout(cycle, 8000);
-      }, 7000);
-    }, 4000);
+function connectAudioAnalyser() {
+  // Intentionally no-op — we don't connect to AudioContext so that
+  // the <audio> element stays under the OS media layer and survives
+  // screen lock, background tabs, and power button presses.
+}
+
+function startVisualiser() {
+  initVisualiser();
+  if (_viz.animId) return;
+  var lastTime = 0;
+
+  function draw(timestamp) {
+    _viz.animId = requestAnimationFrame(draw);
+    var dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+    if (dt > 0.1) dt = 0.016;
+
+    var ctx = _viz.ctx;
+    var w = _viz.w;
+    var h = _viz.h;
+    var cx = w / 2;
+    var cy = h / 2;
+    var baseR = Math.min(cx, cy) * 0.35;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Breathing cycle: 4s in, 7s hold, 8s out = 19s total
+    _viz.breathT += dt;
+    var cycleT = _viz.breathT % 19;
+    var breathScale, label;
+    if (cycleT < 4) {
+      breathScale = 1 + 0.6 * (cycleT / 4);
+      label = 'Breathe in';
+      _viz.breathPhase = 0;
+    } else if (cycleT < 11) {
+      breathScale = 1.6;
+      label = 'Hold';
+      _viz.breathPhase = 1;
+    } else {
+      breathScale = 1.6 - 0.6 * ((cycleT - 11) / 8);
+      label = 'Breathe out';
+      _viz.breathPhase = 2;
+    }
+    var el = document.getElementById('breath-label');
+    if (el) el.textContent = label;
+
+    _viz.hueOffset += dt * 12;
+    var hue1 = (_viz.hueOffset) % 360;
+    var hue2 = (hue1 + 60) % 360;
+    var hue3 = (hue1 + 180) % 360;
+
+    // Audio-reactive amplitude from the playing audio element
+    var audio = document.getElementById('imm-audio');
+    var isPlaying = audio && !audio.paused;
+
+    var rings = 3;
+    for (var ring = 0; ring < rings; ring++) {
+      var ringR = baseR * breathScale * (0.7 + ring * 0.35);
+      var alpha = 0.5 - ring * 0.12;
+      var hue = [hue1, hue2, hue3][ring];
+      var slices = 128;
+
+      ctx.beginPath();
+      for (var i = 0; i <= slices; i++) {
+        var angle = (i / slices) * Math.PI * 2 - Math.PI / 2;
+        var wave = Math.sin(timestamp * 0.001 + i * 0.15 + ring * 2) * 0.15;
+        // Add subtle movement when audio is playing
+        var playBoost = isPlaying ? Math.sin(timestamp * 0.002 + i * 0.3 + ring) * 0.08 : 0;
+        var r = ringR + ringR * (wave + playBoost) * (0.6 + ring * 0.15);
+        var x = cx + Math.cos(angle) * r;
+        var y = cy + Math.sin(angle) * r;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = 'hsla(' + hue + ', 70%, 65%, ' + alpha + ')';
+      ctx.lineWidth = 1.5 - ring * 0.3;
+      ctx.shadowColor = 'hsla(' + hue + ', 80%, 55%, ' + (alpha * 0.6) + ')';
+      ctx.shadowBlur = 12 + ring * 4;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Centre glow orb
+    var orbR = baseR * 0.3 * breathScale;
+    var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, orbR);
+    grad.addColorStop(0, 'hsla(' + hue1 + ', 60%, 70%, 0.15)');
+    grad.addColorStop(0.6, 'hsla(' + hue2 + ', 50%, 50%, 0.05)');
+    grad.addColorStop(1, 'transparent');
+    ctx.beginPath();
+    ctx.arc(cx, cy, orbR, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
   }
-  cycle();
+  _viz.animId = requestAnimationFrame(draw);
+}
+
+function startBreathing() {
+  startVisualiser();
 }
 
 function stopBreathing() {
+  if (_viz.animId) {
+    cancelAnimationFrame(_viz.animId);
+    _viz.animId = null;
+  }
   if (_imm.breathTimer) {
     clearTimeout(_imm.breathTimer);
     _imm.breathTimer = null;
   }
-  var guide = document.getElementById('sleep-breathing');
-  if (guide) guide.style.display = 'none';
 }
 
 // ───── Sleep Timer ─────
@@ -675,7 +1012,7 @@ function fadeOutAudio() {
       clearInterval(fadeInterval);
       stopApodSlideshow();
       endSessionOnServer();
-      if (_imm.sessionId) window.location.href = '/review';
+      if (_imm.sessionId) window.location.href = '/plan';
     } else {
       audio.volume = vol;
     }
@@ -703,17 +1040,18 @@ function immEndSleep() {
   if (_imm.timerInterval) clearInterval(_imm.timerInterval);
   stopBreathing();
   stopApodSlideshow();
+  releaseWakeLock();
+  try { sessionStorage.removeItem('sl33p_state'); } catch(e) {}
 
   if (_imm.elapsedInterval) clearInterval(_imm.elapsedInterval);
 
-  // Report final playlist progress
   if (_imm.playlistId) {
     _reportProgress();
   }
 
   if (_imm.sessionId) {
     endSessionOnServer();
-    window.location.href = '/review';
+    window.location.href = '/plan';
   } else {
     window.location.href = '/plan';
   }
@@ -737,6 +1075,65 @@ function resetHideTimer() {
   if (_imm.hideTimeout) clearTimeout(_imm.hideTimeout);
   _imm.hideTimeout = setTimeout(hideControls, 5000);
 }
+
+// ───── Wake Lock (prevent screen dimming) ─────
+var _wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _wakeLock = await navigator.wakeLock.request('screen');
+    console.log('[wakelock] acquired');
+    _wakeLock.addEventListener('release', function() {
+      console.log('[wakelock] released');
+      _wakeLock = null;
+    });
+  } catch (e) {
+    console.warn('[wakelock] failed:', e.message);
+  }
+}
+
+function releaseWakeLock() {
+  if (_wakeLock) {
+    _wakeLock.release();
+    _wakeLock = null;
+  }
+}
+
+// Re-acquire wake lock when page becomes visible again (after screen unlock)
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') {
+    var audio = document.getElementById('imm-audio');
+    if (audio && !audio.paused) requestWakeLock();
+  }
+});
+
+// ───── Session Resume (survive refresh) ─────
+function _savePlaybackState() {
+  try {
+    sessionStorage.setItem('sl33p_state', JSON.stringify({
+      sessionId: _imm.sessionId,
+      playlistId: _imm.playlistId,
+      trackIndex: _imm.playlistIndex,
+      trackSrc: _imm.trackSrc,
+      trackTitle: _imm.trackTitle,
+      elapsedStart: _imm.elapsedStart,
+      ts: Date.now()
+    }));
+  } catch(e) {}
+}
+
+function _restorePlaybackState() {
+  try {
+    var raw = sessionStorage.getItem('sl33p_state');
+    if (!raw) return null;
+    var state = JSON.parse(raw);
+    // Only restore if same session and less than 12 hours old
+    if (state.sessionId !== _imm.sessionId) return null;
+    if (Date.now() - state.ts > 12 * 60 * 60 * 1000) return null;
+    return state;
+  } catch(e) { return null; }
+}
 </script>
 
 {% endblock %}
@@ -747,24 +1144,52 @@ function resetHideTimer() {
 startBreathing();
 loadApodBackground();
 startSession();
+
+// Restore previous state if refreshed mid-session
+var _restored = _restorePlaybackState();
+if (_restored && _restored.elapsedStart) {
+  _imm.elapsedStart = _restored.elapsedStart;
+  updateElapsed();
+}
+
 initPlaylist().then(function() {
+  var audio = document.getElementById('imm-audio');
   if (!_imm.singleTrackMode && _imm.playlist.length > 1) {
     document.getElementById('ctrl-prev').style.display = '';
     document.getElementById('ctrl-next').style.display = '';
     document.getElementById('ctrl-loop').style.display = 'none';
+    if (audio) audio.loop = false;
+    console.log('[playlist] multi-track mode:', _imm.playlist.length, 'tracks, loop=false');
+    if (_restored && _restored.trackIndex > 0 && _restored.trackIndex < _imm.playlist.length) {
+      _imm.playlistIndex = _restored.trackIndex;
+      _queueTrack(_restored.trackIndex, true);
+    }
   } else {
+    if (audio) audio.loop = true;
     document.getElementById('ctrl-loop').classList.add('active');
+    console.log('[playlist] single-track/loop mode, loop=true');
   }
+  requestWakeLock();
+  if (!_imm.timerEnd) immSetTimer(_DEFAULT_TIMER_MIN);
 });
+
+// Save playback state periodically
+setInterval(_savePlaybackState, 10000);
 
 // Elapsed timer updates every 30s
 setInterval(updateElapsed, 30000);
+
+// Gesture capture — unlocks audio on mobile
+document.addEventListener('click', _onFirstGesture, { once: false });
+document.addEventListener('touchend', _onFirstGesture, { once: false });
 
 document.addEventListener('mousemove', showControls);
 document.addEventListener('touchstart', showControls);
 resetHideTimer();
 
 window.addEventListener('beforeunload', function() {
+  _savePlaybackState();
+  releaseWakeLock();
   if (_imm.sessionId && _imm.started) {
     var data = JSON.stringify({ session_id: _imm.sessionId });
     navigator.sendBeacon('/api/sleep/end', new Blob([data], { type: 'application/json' }));

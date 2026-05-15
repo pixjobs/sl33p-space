@@ -385,7 +385,15 @@ def make_chat_handler(config: dict = None):
 
         loop = asyncio.new_event_loop()
         try:
-            return loop.run_until_complete(_run())
+            result = loop.run_until_complete(_run())
+            try:
+                from db.usage import log_api_usage
+                log_api_usage(user_id=user_id, service="gemini",
+                              model=_config.get("agent", {}).get("model", "gemini-flash-latest"),
+                              cost_usd=0.002, metadata={"purpose": "chat"})
+            except Exception:
+                pass
+            return result
         finally:
             loop.close()
 

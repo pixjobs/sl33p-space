@@ -40,8 +40,7 @@ def upload_track(local_path: str, track_id: str) -> str | None:
         object_name = f"tracks/{track_id}.ogg"
         blob = bucket.blob(object_name)
         blob.upload_from_filename(local_path, content_type="audio/ogg")
-        blob.make_public()
-        return blob.public_url
+        return f"https://storage.googleapis.com/{_bucket_name()}/{object_name}"
     except Exception as e:
         import sys
         print(f"GCS upload failed for {track_id}: {e}", file=sys.stderr)

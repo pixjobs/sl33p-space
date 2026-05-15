@@ -24,13 +24,13 @@
 <section class="stars relative flex items-center justify-center min-h-[calc(100vh-120px)] text-center">
   <div class="relative z-10 max-w-md mx-auto px-4">
     <span class="inline-flex items-center gap-1.5 px-3 py-1.5 mb-6 rounded-full text-xs font-medium text-brand border border-brand/20 bg-brand-soft">
-      &#x1F680; Sleep Mission Control
+      &#127769; AI Sleep Companion
     </span>
 
     <h1 class="text-5xl font-bold tracking-[-2px] text-brand mb-3">sl33p-space</h1>
 
     <p class="text-white/50 leading-relaxed mb-10 max-w-sm mx-auto">
-      Your personal sleep mission control. Plan your wind-down, track your recovery, and drift into deep space soundscapes.
+      Sleep better tonight. AI-crafted soundscapes, a sleep journal that learns, and insights that help you understand your patterns.
     </p>
 
     <div class="flex flex-col gap-4 mb-10 text-left">
@@ -38,32 +38,181 @@
         <span class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-brand-soft text-brand">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-5 h-5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         </span>
-        <span>Mission briefing with AI guidance</span>
+        <span>AI sleep coach that learns your patterns</span>
       </div>
       <div class="flex items-center gap-3 text-sm text-white/50">
         <span class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-brand-soft text-brand">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-5 h-5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
         </span>
-        <span>Generate unique space soundscapes</span>
+        <span>Drift off to AI-generated ambient music</span>
       </div>
       <div class="flex items-center gap-3 text-sm text-white/50">
         <span class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-brand-soft text-brand">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-5 h-5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         </span>
-        <span>Track your mission performance over time</span>
+        <span>Sleep journal with personalised insights</span>
       </div>
     </div>
 
-    {% if firebase_config %}
-    <button class="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-sm font-semibold bg-brand hover:bg-brand-hover text-white shadow-lg shadow-brand/25 transition-all duration-200 hover:-translate-y-0.5" onclick="signInWithGoogle()">
-      <svg viewBox="0 0 24 24" class="w-[18px] h-[18px]" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-      Begin Mission
+    {# ── Auth buttons (default view) ── #}
+    <div id="auth-buttons">
+      <button class="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-sm font-semibold bg-brand hover:bg-brand-hover text-white shadow-lg shadow-brand/25 transition-all duration-200 hover:-translate-y-0.5 w-full justify-center" onclick="signInWithGoogle()">
+        <svg viewBox="0 0 24 24" class="w-[18px] h-[18px]" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Continue with Google
+      </button>
+
+      <div class="flex items-center gap-3 my-4">
+        <div class="flex-1 h-px bg-white/10"></div>
+        <span class="text-xs text-white/25">or</span>
+        <div class="flex-1 h-px bg-white/10"></div>
+      </div>
+
+      <button class="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-sm font-semibold bg-surface border border-border hover:border-border-hover text-white/70 hover:text-white transition-all duration-200 w-full justify-center" onclick="showEmailAuth('signin')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-[18px] h-[18px]"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 4l-10 8L2 4"/></svg>
+        Continue with Email
+      </button>
+    </div>
+
+    {# ── Email auth form (hidden by default) ── #}
+    <div id="auth-email-form" class="hidden">
+      <form onsubmit="handleEmailAuth(event)" class="text-left space-y-3">
+        <div id="auth-name-field" class="hidden">
+          <label class="block text-[0.65rem] text-white/30 mb-1 ml-1">Display name</label>
+          <input type="text" id="auth-name" placeholder="Your name (optional)" autocomplete="name" class="w-full px-4 py-2.5 rounded-lg bg-surface border border-border text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-brand/50 transition-colors">
+        </div>
+        <div>
+          <label class="block text-[0.65rem] text-white/30 mb-1 ml-1">Email</label>
+          <input type="email" id="auth-email" required placeholder="you@example.com" autocomplete="email" class="w-full px-4 py-2.5 rounded-lg bg-surface border border-border text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-brand/50 transition-colors">
+        </div>
+        <div>
+          <label class="block text-[0.65rem] text-white/30 mb-1 ml-1">Password</label>
+          <input type="password" id="auth-password" required minlength="6" placeholder="Min. 6 characters" autocomplete="current-password" class="w-full px-4 py-2.5 rounded-lg bg-surface border border-border text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-brand/50 transition-colors">
+        </div>
+        <div id="auth-confirm-field" class="hidden">
+          <label class="block text-[0.65rem] text-white/30 mb-1 ml-1">Confirm password</label>
+          <input type="password" id="auth-password-confirm" minlength="6" placeholder="Repeat password" autocomplete="new-password" class="w-full px-4 py-2.5 rounded-lg bg-surface border border-border text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-brand/50 transition-colors">
+        </div>
+
+        <div id="auth-error" class="text-xs text-red-400/80 px-1" style="display:none"></div>
+
+        <button type="submit" id="auth-submit-btn" class="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl text-sm font-semibold bg-brand hover:bg-brand-hover text-white shadow-lg shadow-brand/25 transition-all duration-200 w-full">
+          Sign In
+        </button>
+
+        <div class="flex items-center justify-between text-xs px-1">
+          <button type="button" id="auth-forgot" class="text-white/30 hover:text-white/50 bg-transparent border-0 cursor-pointer transition-colors" onclick="resetPassword(document.getElementById('auth-email').value)">Forgot password?</button>
+          <button type="button" id="auth-toggle" class="text-brand/60 hover:text-brand bg-transparent border-0 cursor-pointer transition-colors" onclick="toggleAuthMode()">Create account</button>
+        </div>
+      </form>
+
+      <button class="mt-4 text-xs text-white/25 hover:text-white/40 bg-transparent border-0 cursor-pointer transition-colors" onclick="showAuthButtons()">
+        &larr; Back to all options
+      </button>
+    </div>
+
+    <p class="text-[0.65rem] text-white/20 mt-4">By signing in, you agree to our <a href="/terms" class="text-brand/50 hover:text-brand underline">Terms of Service</a> and <a href="/privacy" class="text-brand/50 hover:text-brand underline">Privacy Policy</a>.</p>
+
+    <div id="referral-note" class="hidden mt-4 px-4 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20 text-xs text-violet-300/70">
+      You've been invited! Sign in to claim your bonus credit.
+    </div>
+
+    <button class="mt-6 inline-flex items-center gap-2 text-xs text-white/20 hover:text-white/40 bg-transparent border-0 cursor-pointer transition-colors" onclick="shareSiteWelcome()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-3.5 h-3.5"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+      Share sl33p-space with a friend
     </button>
-    {% else %}
-    <a href="/plan" class="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl text-sm font-semibold bg-brand hover:bg-brand-hover text-white shadow-lg shadow-brand/25 transition-all duration-200 hover:-translate-y-0.5 no-underline">
-      Launch Mission
-    </a>
-    {% endif %}
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var ref = params.get('ref');
+  if (ref && ref.length >= 6) {
+    localStorage.setItem('sl33p_ref', ref);
+    var note = document.getElementById('referral-note');
+    if (note) note.classList.remove('hidden');
+  }
+})();
+
+var _authMode = 'signin';
+
+function showEmailAuth(mode) {
+  document.getElementById('auth-buttons').classList.add('hidden');
+  document.getElementById('auth-email-form').classList.remove('hidden');
+  _authMode = mode || 'signin';
+  _updateAuthForm();
+  document.getElementById('auth-email').focus();
+}
+
+function showAuthButtons() {
+  document.getElementById('auth-email-form').classList.add('hidden');
+  document.getElementById('auth-buttons').classList.remove('hidden');
+  var errEl = document.getElementById('auth-error');
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; errEl.style.color = ''; }
+}
+
+function toggleAuthMode() {
+  _authMode = _authMode === 'signin' ? 'signup' : 'signin';
+  _updateAuthForm();
+  var errEl = document.getElementById('auth-error');
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; errEl.style.color = ''; }
+}
+
+function _updateAuthForm() {
+  var nameField = document.getElementById('auth-name-field');
+  var confirmField = document.getElementById('auth-confirm-field');
+  var submitBtn = document.getElementById('auth-submit-btn');
+  var toggleBtn = document.getElementById('auth-toggle');
+  var forgotBtn = document.getElementById('auth-forgot');
+  var pwInput = document.getElementById('auth-password');
+
+  if (_authMode === 'signup') {
+    nameField.classList.remove('hidden');
+    confirmField.classList.remove('hidden');
+    submitBtn.textContent = 'Create Account';
+    toggleBtn.textContent = 'Already have an account?';
+    forgotBtn.style.display = 'none';
+    pwInput.autocomplete = 'new-password';
+  } else {
+    nameField.classList.add('hidden');
+    confirmField.classList.add('hidden');
+    submitBtn.textContent = 'Sign In';
+    toggleBtn.textContent = 'Create account';
+    forgotBtn.style.display = '';
+    pwInput.autocomplete = 'current-password';
+  }
+}
+
+function handleEmailAuth(e) {
+  e.preventDefault();
+  var email = document.getElementById('auth-email').value.trim();
+  var password = document.getElementById('auth-password').value;
+
+  if (_authMode === 'signup') {
+    var confirm = document.getElementById('auth-password-confirm').value;
+    if (password !== confirm) {
+      var errEl = document.getElementById('auth-error');
+      if (errEl) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = ''; errEl.style.color = ''; }
+      return;
+    }
+    var name = document.getElementById('auth-name').value.trim();
+    signUpWithEmail(email, password, name);
+  } else {
+    signInWithEmail(email, password);
+  }
+}
+
+function shareSiteWelcome() {
+  var url = window.location.origin;
+  if (navigator.share) {
+    navigator.share({ title: 'sl33p-space', text: 'Check out sl33p-space — AI sleep soundscapes', url: url });
+  } else {
+    navigator.clipboard.writeText(url).then(function() {
+      showToast('Link copied!', 'success');
+    });
+  }
+}
+</script>
 {% endblock %}

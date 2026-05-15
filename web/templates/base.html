@@ -27,22 +27,27 @@
   <nav class="nav">
     <a href="/" class="nav-brand">sl33p-space</a>
     <div class="nav-user" id="nav-user">
-      {% if dev_mode %}
-      <span class="badge badge-dev">DEV</span>
-      <span class="nav-username">Developer</span>
-      {% else %}
-      <button class="btn btn-sm btn-ghost" id="sign-in-btn" onclick="signInWithGoogle()" style="display:none">Sign In</button>
+      {% if is_admin %}<a href="/admin" class="btn btn-sm btn-ghost" style="margin-right:0.5rem">Admin</a>{% endif %}
+      <a href="/" class="btn btn-sm btn-ghost" id="sign-in-btn" style="display:none">Sign In</a>
       <div class="nav-user-info" id="nav-user-info" style="display:none">
         <img class="nav-avatar" id="nav-avatar" src="" alt="">
         <span class="nav-username" id="nav-username"></span>
         <button class="btn btn-sm btn-ghost" onclick="signOutUser()">Sign Out</button>
       </div>
-      {% endif %}
     </div>
   </nav>
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+  <footer class="flex items-center justify-center gap-4 py-6 text-[0.65rem] text-white/15">
+    <a href="/about" class="hover:text-white/30 transition-colors">About</a>
+    <span>&middot;</span>
+    <a href="/privacy" class="hover:text-white/30 transition-colors">Privacy</a>
+    <span>&middot;</span>
+    <a href="/terms" class="hover:text-white/30 transition-colors">Terms</a>
+    <span>&middot;</span>
+    <a href="https://github.com/pixjobs/sl33p-space" target="_blank" class="hover:text-white/30 transition-colors">GitHub</a>
+  </footer>
   <div class="toast-container" id="toast-container"></div>
   {% if firebase_config %}
   <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-app-compat.js"></script>

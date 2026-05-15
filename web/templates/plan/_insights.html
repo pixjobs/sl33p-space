@@ -1,35 +1,210 @@
+{% set has_data = insights and insights.available and insights.stats.reviewed_sessions > 0 %}
+
 <section class="bg-surface border border-brand/10 rounded-2xl overflow-hidden">
   <div class="px-5 py-4">
-    <div class="flex items-center gap-2 mb-2">
+    <div class="flex items-center gap-2 mb-3">
       <span class="w-2 h-2 rounded-full {% if insights and insights.available %}bg-emerald-400{% else %}bg-amber-400{% endif %}" style="animation:seed-pulse 2s ease-in-out infinite"></span>
-      <span class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">MongoDB sleep memory</span>
+      <span class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Sleep Insights</span>
+      {% if has_data %}
+      <span class="ml-auto insight-trend-badge insight-trend-{{ insights.trend }}">
+        {{ insights.trend | replace('_', ' ') | title }}
+      </span>
+      {% endif %}
     </div>
 
-    <p class="text-sm text-white/70 leading-relaxed mb-3">
-      {{ insights.summary if insights else 'Connect MongoDB to turn reviews into recommendations.' }}
-    </p>
+    {% if not insights or not insights.available %}
 
-    <div class="grid grid-cols-2 gap-2 mb-3">
-      <div class="rounded-xl border border-border bg-black/10 p-3">
-        <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1">Best track</div>
-        <div class="text-xs text-white/70 truncate">
-          {% if insights and insights.best_track %}
-            {{ insights.best_track.title }}{% if insights.best_track.avg_rating %} · {{ insights.best_track.avg_rating }}/5{% endif %}
-          {% else %}
-            Learning
+    <p class="text-sm text-white/50 leading-relaxed mb-3">
+      Start logging your sleep to unlock personalised insights.
+    </p>
+    <div class="insight-empty-steps">
+      <div class="insight-step">
+        <span class="insight-step-num">1</span>
+        <span>Log tonight's sleep</span>
+      </div>
+      <div class="insight-step">
+        <span class="insight-step-num">2</span>
+        <span>Rate how you feel</span>
+      </div>
+      <div class="insight-step">
+        <span class="insight-step-num">3</span>
+        <span>Insights build over time</span>
+      </div>
+    </div>
+
+    {% elif not has_data %}
+
+    <p class="text-sm text-white/50 leading-relaxed mb-2">
+      You're set up. Rate a session to start building your sleep profile.
+    </p>
+    <div class="insight-stat-row">
+      <div class="insight-stat">
+        <span class="insight-stat-val text-white/30">{{ insights.stats.total_sessions }}</span>
+        <span class="insight-stat-label">sessions</span>
+      </div>
+      <div class="insight-stat">
+        <span class="insight-stat-val text-white/30">0</span>
+        <span class="insight-stat-label">reviewed</span>
+      </div>
+    </div>
+
+    {% else %}
+
+    {# ── Stats row ── #}
+    <div class="insight-stat-row mb-3">
+      <div class="insight-stat">
+        <span class="insight-stat-val">{{ insights.stats.reviewed_sessions }}</span>
+        <span class="insight-stat-label">reviewed</span>
+      </div>
+      {% if insights.stats.avg_rating %}
+      <div class="insight-stat">
+        <span class="insight-stat-val">{{ insights.stats.avg_rating }}</span>
+        <span class="insight-stat-label">avg rating</span>
+      </div>
+      {% endif %}
+      {% if insights.stats.avg_duration %}
+      <div class="insight-stat">
+        <span class="insight-stat-val">{{ insights.stats.avg_duration | int }}m</span>
+        <span class="insight-stat-label">avg duration</span>
+      </div>
+      {% endif %}
+      {% if insights.best_mood %}
+      <div class="insight-stat">
+        <span class="insight-stat-val">{{ insights.best_mood | title }}</span>
+        <span class="insight-stat-label">best mood</span>
+      </div>
+      {% endif %}
+      {% if insights.stats.avg_depth %}
+      <div class="insight-stat">
+        <span class="insight-stat-val">{{ insights.stats.avg_depth }}</span>
+        <span class="insight-stat-label">avg depth</span>
+      </div>
+      {% endif %}
+      {% if insights.stats.avg_energy %}
+      <div class="insight-stat">
+        <span class="insight-stat-val">{{ insights.stats.avg_energy }}</span>
+        <span class="insight-stat-label">avg energy</span>
+      </div>
+      {% endif %}
+    </div>
+
+    {# ── Recent pattern — last 7 sessions as rating dots ── #}
+    {% if insights.recent_pattern %}
+    <div class="mb-3">
+      <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1.5">Last {{ insights.recent_pattern | length }} nights</div>
+      <div class="insight-pattern-row">
+        {% for night in insights.recent_pattern | reverse %}
+        <div class="insight-pattern-dot {% if night.rating and night.rating >= 4 %}good{% elif night.rating and night.rating >= 3 %}mid{% elif night.rating %}bad{% else %}skip{% endif %}"
+             title="{{ night.date or '?' }} · {{ night.track or '?' }} · {{ night.rating or 'unrated' }}/5">
+          {% if night.rating %}{{ night.rating }}{% else %}-{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Track performance bars ── #}
+    {% if insights.track_performance %}
+    <div class="mb-3">
+      <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1.5">Track performance</div>
+      <div class="insight-track-bars">
+        {% for t in insights.track_performance[:4] %}
+        <div class="insight-track-row">
+          <span class="insight-track-name">{{ t.title }}</span>
+          <div class="insight-bar-wrap">
+            <div class="insight-bar" style="width: {{ (t.avg_rating / 5 * 100) | int }}%"></div>
+          </div>
+          <span class="insight-track-score">{{ t.avg_rating }}<span class="text-white/20">/5</span></span>
+          <span class="insight-track-plays">{{ t.plays }}x</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Factor insights ── #}
+    {% if insights.factor_correlations %}
+    <div class="mb-2">
+      <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1.5">Factor analysis</div>
+      <div class="insight-factors">
+        {% if insights.best_factor %}
+        <div class="insight-factor-card good">
+          <span class="insight-factor-icon">&#9650;</span>
+          <div>
+            <div class="insight-factor-name">{{ insights.best_factor.factor | replace('_', ' ') | title }}</div>
+            <div class="insight-factor-detail">{{ insights.best_factor.avg_rating }}/5 avg across {{ insights.best_factor.sessions }} sessions</div>
+          </div>
+        </div>
+        {% endif %}
+        {% if insights.challenging_factor %}
+        <div class="insight-factor-card warn">
+          <span class="insight-factor-icon">&#9660;</span>
+          <div>
+            <div class="insight-factor-name">{{ insights.challenging_factor.factor | replace('_', ' ') | title }}</div>
+            <div class="insight-factor-detail">{{ insights.challenging_factor.avg_rating }}/5 avg across {{ insights.challenging_factor.sessions }} sessions</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Sleep window + Streak row ── #}
+    {% if insights.best_hour is not none or insights.current_streak > 0 %}
+    <div class="flex gap-3 mb-3">
+      {% if insights.best_hour is not none %}
+      <div class="flex-1 p-2 rounded-lg" style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04)">
+        <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1">Sleep window</div>
+        <div>
+          <span class="insight-hour-val">{{ '%02d' | format(insights.best_hour) }}:00</span>
+          {% if insights.best_hour_rating %}<span class="insight-hour-label">{{ insights.best_hour_rating }}/5 avg</span>{% endif %}
+        </div>
+      </div>
+      {% endif %}
+      {% if insights.current_streak > 0 %}
+      <div class="flex-1 p-2 rounded-lg" style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04)">
+        <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1">Streak</div>
+        <div class="insight-streak">
+          <span class="insight-streak-num">{{ insights.current_streak }}</span>
+          <span class="insight-streak-unit">night{{ 's' if insights.current_streak != 1 else '' }}</span>
+          {% if insights.longest_streak > insights.current_streak %}
+          <span class="insight-streak-longest">best: {{ insights.longest_streak }}</span>
           {% endif %}
         </div>
       </div>
-      <div class="rounded-xl border border-border bg-black/10 p-3">
-        <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1">Recommended mood</div>
-        <div class="text-xs text-white/70 truncate">{{ insights.recommended_mood|title if insights else 'Calm' }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Mood × Track matrix ── #}
+    {% if insights.mood_track_matrix %}
+    <div class="mb-3">
+      <div class="text-[0.55rem] uppercase tracking-[1.5px] text-white/20 mb-1.5">Mood &times; Track</div>
+      <div class="insight-matrix">
+        {% for combo in insights.mood_track_matrix[:5] %}
+        <div class="insight-matrix-row">
+          <span class="insight-matrix-mood">{{ combo.mood }}</span>
+          <span class="insight-matrix-track">{{ combo.track }}</span>
+          <span class="insight-matrix-score">{{ combo.avg_rating }}</span>
+          <span class="insight-matrix-count">{{ combo.sessions }}x</span>
+        </div>
+        {% endfor %}
       </div>
     </div>
+    {% endif %}
 
-    <ol class="text-xs text-white/35 space-y-1 list-decimal list-inside">
-      <li>Pick tonight's mood.</li>
-      <li>Start a MongoDB-tracked sleep session.</li>
-      <li>Review it tomorrow so the agent can improve the next playlist.</li>
-    </ol>
+    {# ── Agent recommendation ── #}
+    <div class="insight-agent-rec">
+      <span class="text-[0.55rem] uppercase tracking-[1px] text-brand/40">agent recommendation</span>
+      <p class="text-xs text-white/60 mt-0.5">{{ insights.summary }}</p>
+    </div>
+
+    {% endif %}
+
+    {# ── Powered-by badge ── #}
+    <div class="mongo-badge mt-3">
+      <svg class="mongo-badge-leaf" viewBox="0 0 15 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.5 0C7.5 0 1.5 5.5 1.5 14c0 5 2.2 8.5 5.2 10.7.2.2.5.3.8.3.3 0 .6-.1.8-.3C11.3 22.5 13.5 19 13.5 14 13.5 5.5 7.5 0 7.5 0z" fill="#00684A"/><path d="M8 25.5h-1v6h1v-6z" fill="#B8C4C2"/></svg>
+      <span>Powered by MongoDB Atlas</span>
+    </div>
   </div>
 </section>

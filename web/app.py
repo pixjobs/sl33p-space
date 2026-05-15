@@ -1,12 +1,13 @@
 import json
 import os
 import threading
-from datetime import datetime
+from datetime import date, datetime
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
-from web.auth import init_auth, require_auth, require_login, get_user_id, get_current_user, is_dev_mode
+from web.auth import init_auth, require_auth, require_login, require_admin, get_user_id, get_current_user, is_admin
 
 _agent_runner = None
 _seeding = False
+_last_seed_check = 0.0
 
 
 def _load_config() -> dict:
@@ -28,19 +29,41 @@ def create_app(agent_runner=None):
     )
     init_auth(app)
 
+    @app.after_request
+    def _maybe_seed(response):
+        global _seeding, _last_seed_check
+        import time
+        now = time.monotonic()
+        if _seeding or now - _last_seed_check < 300:
+            return response
+        if not os.environ.get("GOOGLE_API_KEY"):
+            return response
+        _last_seed_check = now
+        from audio.music_gen import list_generated_music
+        tracks = list_generated_music()
+        if len(tracks) < 5:
+            _seeding = True
+            need = 5 - len(tracks)
+            def _seed_bg():
+                global _seeding
+                try:
+                    from audio.music_gen import seed_n_tracks
+                    seed_n_tracks(need)
+                finally:
+                    _seeding = False
+            threading.Thread(target=_seed_bg, daemon=True).start()
+        return response
+
     @app.context_processor
-    def _inject_firebase_config():
-        if is_dev_mode():
-            return {"firebase_config": None}
+    def _inject_globals():
         cfg = {
             "apiKey": os.environ.get("FIREBASE_API_KEY", ""),
             "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", ""),
             "projectId": os.environ.get("FIREBASE_PROJECT_ID", ""),
             "appId": os.environ.get("FIREBASE_APP_ID", ""),
         }
-        if not cfg["apiKey"]:
-            return {"firebase_config": None}
-        return {"firebase_config": cfg}
+        firebase_config = cfg if cfg["apiKey"] else None
+        return {"firebase_config": firebase_config, "is_admin": is_admin()}
 
     @app.route("/healthz")
     def healthz():
@@ -53,11 +76,23 @@ def create_app(agent_runner=None):
             return redirect(url_for("plan"))
         return render_template("welcome.html")
 
+    @app.route("/about")
+    def about():
+        return render_template("about.html")
+
+    @app.route("/privacy")
+    def privacy():
+        return render_template("legal.html", page="privacy")
+
+    @app.route("/terms")
+    def terms():
+        return render_template("legal.html", page="terms")
+
     @app.route("/plan")
     @require_auth
     def plan():
         from audio.music_gen import list_generated_music, get_preset_prompts
-        from db.sessions import get_pending_review, get_recent_sessions, get_sleep_stats
+        from db.sessions import get_pending_review, get_recent_sessions, get_sleep_stats, get_active_session
         from db.insights import get_user_sleep_insights
         from db.users import get_user
 
@@ -73,26 +108,25 @@ def create_app(agent_runner=None):
 
         tracks = list_generated_music()
 
-        global _seeding
-        if len(tracks) < 5 and not _seeding and os.environ.get("GOOGLE_API_KEY"):
-            _seeding = True
-            def _seed_bg():
-                global _seeding
-                try:
-                    from audio.music_gen import seed_n_tracks
-                    seed_n_tracks(5 - len(tracks))
-                finally:
-                    _seeding = False
-            threading.Thread(target=_seed_bg, daemon=True).start()
-
         db_user = get_user(uid)
         prefs = (db_user or {}).get("preferences", {})
         persona = prefs.get("persona")
         tracking_level = prefs.get("tracking_level", "basic")
 
-        from db.tiers import get_user_tier
+        from db.tiers import get_user_tier, get_pending_gifts
         user_tier = get_user_tier(uid)
+        pending_gifts = get_pending_gifts(uid)
         insights = get_user_sleep_insights(uid)
+        try:
+            from db.assets import get_cached_apod
+            from db import get_db
+            cached = get_cached_apod(date.today().isoformat()) if get_db() else None
+            if cached and cached.get("media_type") == "image":
+                apod = {"url": cached.get("hdurl") or cached.get("url"), "title": cached.get("title", ""), "explanation": cached.get("explanation", "")}
+            else:
+                apod = None
+        except Exception:
+            apod = None
 
         return render_template(
             "plan.html",
@@ -109,12 +143,19 @@ def create_app(agent_runner=None):
             tracking_level=tracking_level,
             user_tier=user_tier,
             insights=insights,
+            active_session=get_active_session(uid),
+            apod=apod,
+            pending_gifts=pending_gifts,
+            uid=uid,
         )
 
     @app.route("/media/music/<path:filename>")
     def serve_music(filename):
         music_dir = os.path.abspath("data/music")
-        return send_from_directory(music_dir, filename)
+        response = send_from_directory(music_dir, filename)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Length'
+        return response
 
     # ───── Chat ─────
 
@@ -155,6 +196,16 @@ def create_app(agent_runner=None):
 
     @app.route("/api/music/library")
     def api_music_library():
+        scope = request.args.get("scope", "all")
+        uid = get_user_id()
+        if scope == "mine" and uid != "anonymous":
+            from db.tracks import get_tracks_for_user
+            from audio.music_gen import format_track_entry
+            return jsonify([format_track_entry(t) for t in get_tracks_for_user(uid)])
+        if scope == "public":
+            from db.tracks import get_public_tracks
+            from audio.music_gen import format_track_entry
+            return jsonify([format_track_entry(t) for t in get_public_tracks()])
         from audio.music_gen import list_generated_music
         return jsonify(list_generated_music())
 
@@ -229,16 +280,6 @@ def create_app(agent_runner=None):
             playlist_id=playlist_id,
         )
 
-    @app.route("/review")
-    @require_auth
-    def review_view():
-        from db.sessions import get_pending_review
-        uid = get_user_id()
-        pending = get_pending_review(uid)
-        if not pending:
-            return redirect(url_for("plan"))
-        return render_template("review.html", session=pending)
-
     @app.route("/api/sleep/recommend", methods=["POST"])
     @require_auth
     def api_sleep_recommend():
@@ -270,11 +311,18 @@ def create_app(agent_runner=None):
                     '{"soundscape_title": "...", "duration_hours": 7.5, '
                     '"wind_down": "...", "reasoning": "one sentence"}'
                 )
+                model_name = _load_config().get("agent", {}).get("model", "gemini-flash-latest")
                 response = client.models.generate_content(
-                    model=_load_config().get("agent", {}).get("model", "gemini-flash-latest"),
+                    model=model_name,
                     contents=prompt,
                     config={"system_instruction": "You are a sleep coach. Be concise.", "temperature": 0.7},
                 )
+                try:
+                    from db.usage import log_api_usage
+                    log_api_usage(user_id=uid, service="gemini", model=model_name,
+                                  cost_usd=0.001, metadata={"purpose": "sleep_recommendation"})
+                except Exception:
+                    pass
                 text = response.text.strip()
                 if text.startswith("```"):
                     text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -290,6 +338,32 @@ def create_app(agent_runner=None):
             "wind_down": "4-7-8 breathing for 5 minutes",
             "reasoning": "Based on your preferences" if stats.get("total_sessions") else "A good starting point for restful sleep",
         })
+
+    @app.route("/api/sleep/log", methods=["POST"])
+    @require_auth
+    def api_sleep_log():
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        from db.sessions import create_manual_session
+        data = request.get_json(force=True)
+        uid = get_user_id()
+        mood = data.get("mood", "calm")
+        now = _dt.now(_tz.utc)
+
+        bed_str = data.get("bed_time", "23:00")
+        wake_str = data.get("wake_time", "07:00")
+        try:
+            bh, bm = int(bed_str.split(":")[0]), int(bed_str.split(":")[1])
+            wh, wm = int(wake_str.split(":")[0]), int(wake_str.split(":")[1])
+        except (ValueError, IndexError):
+            return jsonify({"error": "Invalid time format"}), 400
+
+        bed_time = now.replace(hour=bh, minute=bm, second=0, microsecond=0)
+        wake_time = now.replace(hour=wh, minute=wm, second=0, microsecond=0)
+        if bed_time >= wake_time:
+            bed_time -= _td(days=1)
+
+        sid = create_manual_session(uid, bed_time, wake_time, mood)
+        return jsonify({"session_id": sid, "status": "ok"})
 
     @app.route("/api/sleep/plan", methods=["POST"])
     @require_auth
@@ -357,7 +431,7 @@ def create_app(agent_runner=None):
     @app.route("/api/sleep/review", methods=["POST"])
     @require_auth
     def api_sleep_review():
-        from db.sessions import review_session, skip_review
+        from db.sessions import review_session, skip_review, update_session_factors
         data = request.get_json(force=True)
         sid = data.get("session_id")
         if not sid:
@@ -366,9 +440,12 @@ def create_app(agent_runner=None):
             skip_review(sid)
         else:
             rating = int(data.get("rating", 3))
-            notes = data.get("notes", "")
-            metrics = data.get("metrics", {})
+            metrics = data.get("metrics") or None
+            notes = data.get("notes") or ""
             review_session(sid, rating=rating, notes=notes, metrics=metrics)
+            factors = data.get("factors")
+            if factors is not None:
+                update_session_factors(sid, factors)
         return jsonify({"status": "ok"})
 
     @app.route("/api/sleep/review-schema")
@@ -427,6 +504,32 @@ def create_app(agent_runner=None):
             return jsonify({"status": "ok"})
         return jsonify({"error": "Could not update"}), 400
 
+    @app.route("/api/sleep/notes", methods=["POST"])
+    @require_auth
+    def api_sleep_notes():
+        from db.sessions import update_session_notes
+        data = request.get_json(force=True)
+        sid = data.get("session_id")
+        notes = data.get("notes", "")
+        if not sid:
+            return jsonify({"error": "session_id required"}), 400
+        if update_session_notes(sid, notes):
+            return jsonify({"status": "ok"})
+        return jsonify({"error": "Could not update"}), 400
+
+    @app.route("/api/sleep/delete", methods=["POST"])
+    @require_auth
+    def api_sleep_delete():
+        from db.sessions import delete_session
+        data = request.get_json(force=True)
+        sid = data.get("session_id")
+        if not sid:
+            return jsonify({"error": "session_id required"}), 400
+        uid = get_user_id()
+        if delete_session(sid, uid):
+            return jsonify({"status": "ok"})
+        return jsonify({"error": "Could not delete"}), 400
+
     # ───── Scene Routes ─────
 
     @app.route("/api/scenes/cosmos")
@@ -460,7 +563,9 @@ def create_app(agent_runner=None):
         for theme_dir in os.listdir(scenes_dir) if os.path.isdir(scenes_dir) else []:
             full_path = os.path.join(scenes_dir, theme_dir, filename)
             if os.path.exists(full_path):
-                return send_from_directory(os.path.join(scenes_dir, theme_dir), filename)
+                response = send_from_directory(os.path.join(scenes_dir, theme_dir), filename)
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                return response
         return "Not found", 404
 
     # ───── User Preferences ─────
@@ -482,7 +587,24 @@ def create_app(agent_runner=None):
         update_preferences(get_user_id(), data)
         return jsonify({"status": "ok"})
 
+    @app.route("/api/user/timezone", methods=["POST"])
+    @require_auth
+    def api_user_timezone():
+        data = request.get_json(force=True)
+        tz = data.get("timezone", "")
+        if tz and len(tz) < 50:
+            from db.users import update_timezone
+            update_timezone(get_user_id(), tz)
+        return jsonify({"status": "ok"})
+
     # ───── Tier / Credits / Packs ─────
+
+    @app.route("/api/user/gifts/dismiss", methods=["POST"])
+    @require_auth
+    def api_user_gifts_dismiss():
+        from db.tiers import mark_gifts_seen
+        mark_gifts_seen(get_user_id())
+        return jsonify({"status": "ok"})
 
     @app.route("/api/user/tier")
     @require_auth
@@ -502,11 +624,39 @@ def create_app(agent_runner=None):
         return jsonify({"balance": balance, "added": amount})
 
     @app.route("/api/user/set-admin", methods=["POST"])
-    @require_auth
+    @require_admin
     def api_user_set_admin():
         from db.tiers import set_admin
-        set_admin(get_user_id())
-        return jsonify({"status": "ok"})
+        data = request.get_json(force=True)
+        target_uid = data.get("uid")
+        if not target_uid:
+            return jsonify({"error": "uid required"}), 400
+        set_admin(target_uid)
+        return jsonify({"status": "ok", "uid": target_uid})
+
+    @app.route("/api/user/referral")
+    @require_auth
+    def api_user_referral():
+        from db.tiers import get_referral_stats
+        stats = get_referral_stats(get_user_id())
+        return jsonify(stats)
+
+    @app.route("/api/user/redeem-referral", methods=["POST"])
+    @require_auth
+    def api_user_redeem_referral():
+        from db.tiers import redeem_referral
+        data = request.get_json(force=True)
+        code = data.get("code", "").strip()
+        if not code:
+            return jsonify({"error": "No referral code"}), 400
+        ok, msg = redeem_referral(code, get_user_id())
+        if ok:
+            return jsonify({"status": "ok"})
+        return jsonify({"error": msg}), 400
+
+    @app.route("/refer/<code>")
+    def referral_redirect(code):
+        return redirect(f"/?ref={code}")
 
     @app.route("/api/packs")
     def api_packs():
@@ -540,5 +690,68 @@ def create_app(agent_runner=None):
         data = request.get_json(force=True)
         update_playlist_progress(playlist_id, data.get("tracks_played", 0))
         return jsonify({"status": "ok"})
+
+    # ───── Admin Dashboard ─────
+
+    @app.route("/admin")
+    @require_admin
+    def admin_dashboard():
+        from db.admin import get_platform_stats
+        return render_template("admin.html", stats=get_platform_stats())
+
+    @app.route("/api/admin/stats")
+    @require_admin
+    def api_admin_stats():
+        from db.admin import get_platform_stats
+        return jsonify(get_platform_stats())
+
+    @app.route("/api/admin/users")
+    @require_admin
+    def api_admin_users():
+        from db.admin import get_user_list
+        page = request.args.get("page", 1, type=int)
+        return jsonify(get_user_list(page=page))
+
+    @app.route("/api/admin/usage")
+    @require_admin
+    def api_admin_usage():
+        from db.admin import get_usage_summary
+        days = request.args.get("days", 30, type=int)
+        days = max(1, min(days, 180))
+        return jsonify(get_usage_summary(days=days))
+
+    @app.route("/api/admin/tracks")
+    @require_admin
+    def api_admin_tracks():
+        from db.admin import get_track_list
+        page = request.args.get("page", 1, type=int)
+        per_page = request.args.get("per_page", 20, type=int)
+        per_page = max(1, min(per_page, 100))
+        return jsonify(get_track_list(page=page, per_page=per_page))
+
+    @app.route("/api/admin/gift-credits", methods=["POST"])
+    @require_admin
+    def api_admin_gift_credits():
+        from db.tiers import gift_credits
+        data = request.get_json(force=True)
+        target_uid = data.get("uid")
+        amount = int(data.get("amount", 0))
+        if not target_uid:
+            return jsonify({"error": "uid required"}), 400
+        if amount < 1 or amount > 10:
+            return jsonify({"error": "Amount must be 1-10"}), 400
+        user = get_current_user()
+        from_name = (user.get("name", "") or "").split()[0] if user else "Admin"
+        new_balance = gift_credits(get_user_id(), target_uid, amount, from_name)
+        return jsonify({"status": "ok", "new_balance": new_balance})
+
+    @app.route("/api/admin/seed", methods=["POST"])
+    @require_admin
+    def api_admin_seed():
+        from audio.music_gen import seed_n_tracks
+        data = request.get_json(force=True) if request.is_json else {}
+        n = min(data.get("n", 3), 10)
+        result = seed_n_tracks(n=n)
+        return jsonify(result)
 
     return app

@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}sl33p-space — {% if page == 'privacy' %}Privacy Policy{% else %}Terms of Service{% endif %}{% endblock %}
+{% block styles %}
+<style>
+.legal { max-width: 720px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+.legal h1 { font-size: 1.75rem; font-weight: 700; color: rgba(255,255,255,0.9); margin-bottom: 0.5rem; }
+.legal .legal-sub { font-size: 0.8rem; color: rgba(255,255,255,0.3); margin-bottom: 2rem; }
+.legal h2 { font-size: 1.1rem; font-weight: 600; color: rgba(255,255,255,0.75); margin-top: 2rem; margin-bottom: 0.75rem; }
+.legal p, .legal li { font-size: 0.85rem; line-height: 1.7; color: rgba(255,255,255,0.5); }
+.legal ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
+.legal li { margin-bottom: 0.35rem; }
+.legal a { color: #7c5cfc; text-decoration: underline; text-underline-offset: 2px; }
+.legal .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; background: rgba(124,92,252,0.12); color: #7c5cfc; margin-bottom: 1.5rem; }
+.legal hr { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 2rem 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="legal">
+
+{% if page == 'privacy' %}
+
+<span class="badge">Hackathon Project</span>
+<h1>Privacy Policy</h1>
+<p class="legal-sub">Last updated: 14 May 2026</p>
+
+<p>sl33p-space is an open-source prototype developed for the <strong>Google Cloud Rapid Agent Hackathon</strong> (MongoDB track, &ldquo;Building Agents for Real-World Challenges&rdquo;). It is not a commercial product. The source code is available under the <a href="https://github.com/pixjobs/sl33p-space/blob/main/LICENSE" target="_blank">MIT License</a> at <a href="https://github.com/pixjobs/sl33p-space" target="_blank">github.com/pixjobs/sl33p-space</a>.</p>
+
+<p>This policy explains what data we collect, why, and how we protect it. We take your privacy seriously even though this is a hackathon project.</p>
+
+<h2>1. Data Controller</h2>
+<p>The data controller is the sl33p-space project maintainer, contactable via <a href="https://github.com/pixjobs/sl33p-space/issues" target="_blank">GitHub Issues</a>.</p>
+
+<h2>2. What We Collect</h2>
+<ul>
+  <li><strong>Authentication data</strong> &mdash; When you sign in with Google via Firebase Authentication, we receive your name, email address, and profile photo. We do not receive or store your Google password.</li>
+  <li><strong>Sleep session data</strong> &mdash; Mood selections, session duration, sleep quality ratings, review notes, and factors you choose to log (e.g. caffeine, exercise).</li>
+  <li><strong>Generated content</strong> &mdash; Music prompts, soundscape preferences, and AI-generated audio tracks created through your use of the service.</li>
+  <li><strong>Usage analytics</strong> &mdash; API call counts and service usage metrics (e.g. number of generations per month). These are used for rate-limiting and cost monitoring, not behavioural profiling.</li>
+  <li><strong>Timezone</strong> &mdash; Your browser&rsquo;s timezone, used to personalise greetings and sleep recommendations.</li>
+</ul>
+
+<h2>3. Legal Basis (GDPR Art. 6)</h2>
+<p>We process your data on the basis of <strong>consent</strong> (Art. 6(1)(a) GDPR). By signing in, you consent to the processing described in this policy. You may withdraw consent at any time by deleting your account or contacting us.</p>
+
+<h2>4. How We Use Your Data</h2>
+<ul>
+  <li>Personalise soundscapes and sleep recommendations based on your mood and history.</li>
+  <li>Track sleep patterns to surface insights and trends over time.</li>
+  <li>Enforce generation quotas and rate limits.</li>
+  <li>Monitor platform costs and API usage (aggregated, not individually targeted).</li>
+</ul>
+<p>We do <strong>not</strong> sell your data, use it for advertising, or profile you for marketing purposes.</p>
+
+<h2>5. Data Storage &amp; Security</h2>
+<ul>
+  <li><strong>Database:</strong> MongoDB Atlas with encryption at rest (AES-256) and in transit (TLS 1.2+). X.509 certificate authentication is used for database access.</li>
+  <li><strong>Infrastructure:</strong> Google Cloud Platform, <code>europe-west1</code> region (Belgium). Cloud Run containers with Secret Manager for credential storage.</li>
+  <li><strong>Audio files:</strong> Generated tracks are stored in Google Cloud Storage with restricted access.</li>
+</ul>
+
+<h2>6. Admin Pseudonymisation</h2>
+<p>Administrative views use deterministic pseudonymised identifiers (e.g. &ldquo;Cosmic Penguin&rdquo;) instead of raw email addresses. Only the authenticated admin account can access aggregate platform statistics. Individual user data is not exposed to other users.</p>
+
+<h2>7. Third-Party Services</h2>
+<ul>
+  <li><strong>Google Cloud Platform</strong> &mdash; Hosting, compute, and storage (<a href="https://cloud.google.com/terms/cloud-privacy-notice" target="_blank">Privacy Notice</a>)</li>
+  <li><strong>Firebase Authentication</strong> &mdash; Identity and sign-in (<a href="https://firebase.google.com/support/privacy" target="_blank">Privacy Policy</a>)</li>
+  <li><strong>MongoDB Atlas</strong> &mdash; Database hosting (<a href="https://www.mongodb.com/legal/privacy-policy" target="_blank">Privacy Policy</a>)</li>
+  <li><strong>Google Lyria API</strong> &mdash; AI music generation (processed via Google Cloud; no user data is sent beyond the text prompt)</li>
+</ul>
+
+<h2>8. Cookies</h2>
+<p>We use a single <strong>functional session cookie</strong> to maintain your authentication state across page loads. We do not use tracking cookies, analytics cookies, or advertising cookies.</p>
+
+<h2>9. Data Retention</h2>
+<p>Your data is retained for as long as your account is active. You may request deletion at any time. Upon request, all personal data (profile, sessions, generated tracks) will be permanently deleted within 30 days.</p>
+
+<h2>10. Your Rights (GDPR)</h2>
+<p>If you are in the European Economic Area or the United Kingdom, you have the right to:</p>
+<ul>
+  <li><strong>Access</strong> &mdash; Request a copy of the personal data we hold about you.</li>
+  <li><strong>Rectification</strong> &mdash; Correct inaccurate or incomplete data.</li>
+  <li><strong>Erasure</strong> &mdash; Request deletion of your data (&ldquo;right to be forgotten&rdquo;).</li>
+  <li><strong>Data portability</strong> &mdash; Receive your data in a structured, machine-readable format.</li>
+  <li><strong>Restriction</strong> &mdash; Request that we limit processing of your data.</li>
+  <li><strong>Objection</strong> &mdash; Object to processing of your data.</li>
+  <li><strong>Complaint</strong> &mdash; Lodge a complaint with your local supervisory authority (e.g. the <a href="https://ico.org.uk/" target="_blank">UK ICO</a>).</li>
+</ul>
+<p>To exercise any of these rights, open an issue at <a href="https://github.com/pixjobs/sl33p-space/issues" target="_blank">github.com/pixjobs/sl33p-space/issues</a>.</p>
+
+<h2>11. Children</h2>
+<p>This service is not directed at individuals under the age of 16. We do not knowingly collect data from children.</p>
+
+<h2>12. Changes to This Policy</h2>
+<p>We may update this policy from time to time. Material changes will be communicated via the application. The &ldquo;Last updated&rdquo; date at the top reflects the most recent revision.</p>
+
+<hr>
+<p>For questions or concerns, please open an issue on <a href="https://github.com/pixjobs/sl33p-space/issues" target="_blank">GitHub</a>.</p>
+
+
+{% elif page == 'terms' %}
+
+<span class="badge">Hackathon Project</span>
+<h1>Terms of Service</h1>
+<p class="legal-sub">Last updated: 14 May 2026</p>
+
+<p>sl33p-space is an open-source prototype developed for the <strong>Google Cloud Rapid Agent Hackathon</strong> (MongoDB track, &ldquo;Building Agents for Real-World Challenges&rdquo;). The source code is released under the <a href="https://github.com/pixjobs/sl33p-space/blob/main/LICENSE" target="_blank">MIT License</a> and is available at <a href="https://github.com/pixjobs/sl33p-space" target="_blank">github.com/pixjobs/sl33p-space</a>.</p>
+
+<p>By accessing or using sl33p-space, you agree to be bound by these Terms of Service and our <a href="/privacy">Privacy Policy</a>.</p>
+
+<h2>1. Hackathon Prototype Disclaimer</h2>
+<p>This application is a <strong>hackathon prototype</strong> and is provided strictly &ldquo;as is&rdquo; and &ldquo;as available&rdquo; without any warranty of any kind, whether express, implied, or statutory. We make no guarantees regarding:</p>
+<ul>
+  <li>Availability, uptime, or reliability of the service.</li>
+  <li>Accuracy or suitability of AI-generated sleep recommendations.</li>
+  <li>Continuous availability of generated audio content.</li>
+  <li>Data persistence beyond the hackathon evaluation period.</li>
+</ul>
+<p><strong>This application does not provide medical advice.</strong> It is not a substitute for professional medical consultation, diagnosis, or treatment. Always seek the advice of a qualified healthcare provider with any questions regarding a medical condition or sleep disorder.</p>
+
+<h2>2. Eligibility</h2>
+<p>You must have a valid Google account to use this service. You must be at least 16 years of age. By using the service, you represent that you meet these requirements.</p>
+
+<h2>3. Acceptable Use</h2>
+<p>You agree to use sl33p-space solely for personal sleep improvement and wellbeing purposes. You shall not:</p>
+<ul>
+  <li>Attempt to access other users&rsquo; data or accounts.</li>
+  <li>Circumvent rate limits, quotas, or authentication mechanisms.</li>
+  <li>Use the service to generate content for commercial redistribution.</li>
+  <li>Reverse-engineer, disrupt, or overload the service infrastructure.</li>
+  <li>Use automated tools to scrape or harvest data from the service.</li>
+</ul>
+
+<h2>4. Generated Content</h2>
+<p>Audio tracks are generated using Google&rsquo;s Lyria AI model. Generated content:</p>
+<ul>
+  <li>Is created on-demand based on text prompts and may not be reproducible.</li>
+  <li>Is subject to Google&rsquo;s AI usage policies and content guidelines.</li>
+  <li>Does not confer exclusive ownership rights to any party.</li>
+  <li>May be removed or become unavailable at any time without notice.</li>
+</ul>
+
+<h2>5. Quotas &amp; Rate Limits</h2>
+<p>Generation quotas are applied per account tier. Exceeding your quota will result in temporary restriction of generation capabilities. Quotas reset monthly. Abuse of the generation system may result in account suspension.</p>
+
+<h2>6. Intellectual Property</h2>
+<p>The sl33p-space source code is licensed under the MIT License. Third-party services (Google Cloud, Firebase, MongoDB, Lyria) are subject to their respective terms and licenses. The sl33p-space name and branding are used in the context of this hackathon project.</p>
+
+<h2>7. Limitation of Liability</h2>
+<p>To the maximum extent permitted by applicable law, the sl33p-space project maintainers and contributors shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenue, whether incurred directly or indirectly, or any loss of data, use, goodwill, or other intangible losses resulting from:</p>
+<ul>
+  <li>Your use of or inability to use the service.</li>
+  <li>Any conduct or content of any third party on the service.</li>
+  <li>Unauthorised access, use, or alteration of your data.</li>
+  <li>Any AI-generated recommendations, soundscapes, or content.</li>
+</ul>
+
+<h2>8. Indemnification</h2>
+<p>You agree to indemnify and hold harmless the project maintainers and contributors from any claims, damages, losses, or expenses (including reasonable legal fees) arising from your use of the service or violation of these terms.</p>
+
+<h2>9. Termination</h2>
+<p>We reserve the right to suspend or terminate your access at any time, for any reason, without prior notice. As a hackathon prototype, the service may be discontinued entirely after the evaluation period. Upon termination, your right to use the service ceases immediately.</p>
+
+<h2>10. Governing Law</h2>
+<p>These terms shall be governed by and construed in accordance with the laws of England and Wales, without regard to conflict of law principles. Any disputes arising under these terms shall be subject to the exclusive jurisdiction of the courts of England and Wales.</p>
+
+<h2>11. Changes to These Terms</h2>
+<p>We may modify these terms at any time. Continued use of the service after changes constitutes acceptance of the revised terms. Material changes will be communicated via the application.</p>
+
+<hr>
+<p>For questions or concerns, please open an issue on <a href="https://github.com/pixjobs/sl33p-space/issues" target="_blank">GitHub</a>.</p>
+
+{% endif %}
+
+</div>
+{% endblock %}

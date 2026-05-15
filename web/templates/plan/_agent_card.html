@@ -1,0 +1,47 @@
+<section class="agent-card" id="agent-card">
+  <div class="agent-card-header">
+    <div class="agent-card-indicator">
+      <span class="agent-pulse"></span>
+      <span class="agent-card-label">Sleep Coach{% if not has_agent %} &middot; offline{% endif %}</span>
+    </div>
+    <button class="agent-expand-btn" id="agent-expand-btn" onclick="toggleAgentChat()" title="Chat with coach">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span class="agent-expand-label">Chat</span>
+    </button>
+  </div>
+
+  <div class="agent-rec" id="agent-rec">
+    <div class="agent-rec-loading" id="agent-rec-loading">
+      <span class="agent-rec-dots">Analysing your sleep data</span>
+    </div>
+    <div class="agent-rec-content hidden" id="agent-rec-content">
+      <p class="agent-rec-text" id="agent-rec-text"></p>
+      <div class="agent-rec-actions">
+        <button class="btn btn-sm btn-primary rounded-lg" id="agent-use-btn" onclick="useAgentPlan()">Use this plan</button>
+        <button class="btn btn-sm btn-ghost rounded-lg" onclick="dismissAgentRec()">Dismiss</button>
+      </div>
+    </div>
+    <div class="agent-rec-empty hidden" id="agent-rec-empty">
+      <p class="text-[0.8rem] text-white/40">Ready when you are. Ask me anything about your sleep.</p>
+    </div>
+  </div>
+
+  <div class="agent-quick" id="agent-quick">
+    <button class="agent-quick-btn" onclick="sendChatMsg('What should I listen to tonight?')">Tonight</button>
+    <button class="agent-quick-btn" onclick="sendChatMsg('How did I sleep this week?')">This week</button>
+    <button class="agent-quick-btn" onclick="sendChatMsg('Any patterns in my sleep data?')">Patterns</button>
+    <button class="agent-quick-btn" onclick="sendChatMsg('Tips to improve my sleep')">Tips</button>
+  </div>
+
+  <div class="agent-chat-expandable hidden" id="agent-chat-panel">
+    <div class="agent-chat-messages" id="chat-messages">
+      {% if not has_agent %}<div class="coach-row coach-agent"><div class="coach-avatar">S</div><div class="coach-bubble">Gemini is not configured, but I can still summarize your MongoDB sleep history. Try "history".</div></div>{% endif %}
+    </div>
+    <form class="agent-chat-input" onsubmit="sendChat(event)">
+      <input type="text" id="chat-input" placeholder="Ask your sleep coach..." autocomplete="off">
+      <button type="submit" class="coach-send" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
+      </button>
+    </form>
+  </div>
+</section>

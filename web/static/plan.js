@@ -1,9 +1,13 @@
 /* plan page logic */
 
+// ───── Tabs ─────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.toggle('active', t.dataset.tab === name); });
+  document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.toggle('active', p.id === 'panel-' + name); });
+  if (name === 'insights') loadRecentSessions();
+}
+
 var _plan = { mood: null, track: null };
-var _calYear = new Date().getFullYear();
-var _calMonth = new Date().getMonth() + 1;
-var _calSessions = [];
 var _trackingLevel = document.body.dataset.trackingLevel || 'basic';
 
 // ───── Persona ─────
@@ -19,144 +23,144 @@ async function setPersona(btn) {
   }
 }
 
-// ───── Calendar / Journal ─────
-var _monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+// ───── Recent Sessions ─────
 
-function navCalendar(delta) {
-  _calMonth += delta;
-  if (_calMonth > 12) { _calMonth = 1; _calYear++; }
-  if (_calMonth < 1) { _calMonth = 12; _calYear--; }
-  loadCalendar(_calYear, _calMonth);
-}
-
-async function loadCalendar(year, month) {
-  var label = document.getElementById('cal-month-label');
-  if (label) label.textContent = _monthNames[month - 1] + ' ' + year;
-
+async function loadRecentSessions() {
+  var list = document.getElementById('recent-sessions');
+  if (!list) return;
   try {
-    var data = await api('/api/sleep/calendar?year=' + year + '&month=' + month);
-    _calSessions = data.sessions || [];
-  } catch (e) {
-    _calSessions = [];
-  }
-  renderCalendar(year, month, _calSessions);
-}
-
-function renderCalendar(year, month, sessions) {
-  var grid = document.getElementById('cal-grid');
-  if (!grid) return;
-
-  while (grid.children.length > 7) grid.removeChild(grid.lastChild);
-
-  var firstDay = new Date(year, month - 1, 1).getDay();
-  var offset = (firstDay === 0) ? 6 : firstDay - 1;
-  var daysInMonth = new Date(year, month, 0).getDate();
-
-  var sessionMap = {};
-  sessions.forEach(function(s) {
-    var d = s.day;
-    if (!sessionMap[d]) sessionMap[d] = [];
-    sessionMap[d].push(s);
-  });
-
-  for (var i = 0; i < offset; i++) {
-    var empty = document.createElement('div');
-    empty.className = 'cal-day';
-    grid.appendChild(empty);
-  }
-
-  for (var day = 1; day <= daysInMonth; day++) {
-    var cell = document.createElement('div');
-    cell.className = 'cal-day';
-    cell.textContent = day;
-
-    if (sessionMap[day]) {
-      cell.classList.add('has-session');
-      var best = sessionMap[day][0];
-      var dot = document.createElement('span');
-      dot.className = 'cal-dot';
-      var rating = best.rating;
-      if (rating === null || rating === undefined) {
-        dot.classList.add('skip');
-      } else if (rating >= 4) {
-        dot.classList.add('good');
-      } else if (rating >= 3) {
-        dot.classList.add('mid');
-      } else {
-        dot.classList.add('bad');
-      }
-      cell.appendChild(dot);
-      (function(d, ss) {
-        cell.onclick = function() { showDayDetail(d, ss); };
-      })(day, sessionMap[day]);
+    var data = await api('/api/sleep/history');
+    var sessions = data.sessions || [];
+    list.textContent = '';
+    if (sessions.length === 0) {
+      var empty = document.createElement('li');
+      empty.className = 'recent-empty';
+      empty.textContent = 'No sessions yet. Start one tonight!';
+      list.appendChild(empty);
+      return;
     }
-    grid.appendChild(cell);
-  }
-}
+    sessions.forEach(function(s) {
+      var li = document.createElement('li');
+      li.className = 'recent-row';
 
-function showDayDetail(day, sessions) {
-  var detail = document.getElementById('cal-detail');
-  if (!detail) return;
-  detail.textContent = '';
-
-  var heading = document.createElement('div');
-  heading.style.fontWeight = '600';
-  heading.style.marginBottom = '0.4rem';
-  heading.textContent = _monthNames[_calMonth - 1] + ' ' + day;
-  detail.appendChild(heading);
-
-  sessions.forEach(function(s) {
-    var entry = document.createElement('div');
-    entry.style.marginBottom = '0.4rem';
-
-    var score = document.createElement('span');
-    score.style.color = 'var(--accent)';
-    score.style.fontWeight = '600';
-    score.textContent = s.rating ? s.rating + '/5' : 'skipped';
-    entry.appendChild(score);
-
-    if (s.duration) {
-      var dur = document.createTextNode(' — ' + (s.duration / 60).toFixed(1) + 'h');
-      entry.appendChild(dur);
-    }
-    if (s.track) {
-      var sep = document.createTextNode(' — ');
-      entry.appendChild(sep);
-      var trackName = document.createElement('span');
-      trackName.textContent = s.track;
-      entry.appendChild(trackName);
-    }
-    detail.appendChild(entry);
-
-    if (_trackingLevel === 'detailed' && s.session_id) {
+      var plan = s.plan || {};
+      var review = s.review || {};
+      var actual = s.actual || {};
+      var rating = review.rating;
       var factors = s.factors || [];
-      var factorRow = document.createElement('div');
-      factorRow.className = 'factor-row';
-      factorRow.style.display = 'flex';
-      factorRow.style.gap = '0.35rem';
-      factorRow.style.flexWrap = 'wrap';
-      factorRow.style.marginTop = '0.5rem';
-      ['caffeine','exercise','screen_time','stress','alcohol','nap','late_meal'].forEach(function(f) {
-        var chip = document.createElement('button');
-        chip.className = 'factor-chip' + (factors.indexOf(f) >= 0 ? ' active' : '');
-        chip.textContent = f.replace('_', ' ');
-        chip.onclick = function() { toggleFactor(s.session_id, f, chip); };
-        factorRow.appendChild(chip);
-      });
-      detail.appendChild(factorRow);
-    }
+      var sid = s._id;
+      var date = s.created_at ? new Date(s.created_at) : null;
 
-    if (s.notes) {
-      var note = document.createElement('div');
-      note.style.color = 'var(--text-muted)';
-      note.style.marginTop = '0.3rem';
-      note.style.fontStyle = 'italic';
-      note.textContent = s.notes;
-      detail.appendChild(note);
-    }
-  });
+      // Top row: date + track + rating + delete
+      var top = document.createElement('div');
+      top.className = 'recent-row-top';
 
-  detail.classList.add('visible');
+      var dateEl = document.createElement('span');
+      dateEl.className = 'recent-date';
+      dateEl.textContent = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '?';
+      top.appendChild(dateEl);
+
+      var title = document.createElement('span');
+      title.className = 'recent-title';
+      title.textContent = plan.soundscape_title || 'Untitled';
+      top.appendChild(title);
+
+      if (actual.duration_minutes) {
+        var dur = document.createElement('span');
+        dur.className = 'recent-dur';
+        dur.textContent = actual.duration_minutes >= 60
+          ? (actual.duration_minutes / 60).toFixed(1) + 'h'
+          : Math.round(actual.duration_minutes) + 'm';
+        top.appendChild(dur);
+      }
+
+      var badge = document.createElement('span');
+      badge.className = 'journal-rating-badge';
+      if (rating) {
+        if (rating >= 4) badge.classList.add('good');
+        else if (rating >= 3) badge.classList.add('mid');
+        else badge.classList.add('bad');
+        badge.textContent = rating + '/5';
+      } else {
+        badge.classList.add('skip');
+        badge.textContent = '-';
+      }
+      top.appendChild(badge);
+
+      // Delete button
+      if (sid) {
+        var delBtn = document.createElement('button');
+        delBtn.className = 'journal-delete-btn';
+        delBtn.innerHTML = '&times;';
+        delBtn.title = 'Delete session';
+        (function(id, rowEl, btn) {
+          var armed = false;
+          btn.onclick = function(e) {
+            e.stopPropagation();
+            if (!armed) {
+              armed = true;
+              btn.textContent = 'Delete?';
+              btn.classList.add('armed');
+              setTimeout(function() { if (armed) { armed = false; btn.innerHTML = '&times;'; btn.classList.remove('armed'); } }, 3000);
+            } else {
+              api('/api/sleep/delete', 'POST', { session_id: id }).then(function() {
+                rowEl.style.opacity = '0';
+                setTimeout(function() { rowEl.remove(); }, 200);
+                showToast('Session deleted', 'success');
+              });
+            }
+          };
+        })(sid, li, delBtn);
+        top.appendChild(delBtn);
+      }
+
+      li.appendChild(top);
+
+      // Factor tags (read-only display, tap row to edit)
+      if (factors.length > 0) {
+        var tagRow = document.createElement('div');
+        tagRow.className = 'recent-tags';
+        factors.forEach(function(f) {
+          var tag = document.createElement('span');
+          tag.className = 'recent-tag';
+          tag.textContent = f.replace(/_/g, ' ');
+          tagRow.appendChild(tag);
+        });
+        li.appendChild(tagRow);
+      }
+
+      // Expandable factor editor (hidden by default)
+      var detail = document.createElement('div');
+      detail.className = 'recent-detail hidden';
+      if (sid) {
+        var factorRow = document.createElement('div');
+        factorRow.className = 'journal-factors';
+        ['caffeine','exercise','screen_time','stress','alcohol','nap','late_meal'].forEach(function(f) {
+          var chip = document.createElement('button');
+          chip.className = 'factor-chip' + (factors.indexOf(f) >= 0 ? ' active' : '');
+          chip.textContent = f.replace(/_/g, ' ');
+          chip.onclick = function(e) { e.stopPropagation(); toggleFactor(sid, f, chip); };
+          factorRow.appendChild(chip);
+        });
+        detail.appendChild(factorRow);
+      }
+      li.appendChild(detail);
+
+      // Toggle detail on row tap
+      top.style.cursor = 'pointer';
+      (function(det) {
+        top.onclick = function() { det.classList.toggle('hidden'); };
+      })(detail);
+
+      list.appendChild(li);
+    });
+  } catch (e) {
+    list.textContent = '';
+    var err = document.createElement('li');
+    err.className = 'recent-empty';
+    err.textContent = 'Could not load sessions';
+    list.appendChild(err);
+  }
 }
 
 async function toggleFactor(sessionId, factor, btn) {
@@ -331,6 +335,28 @@ async function startSleep() {
   }
 }
 
+// ───── Manual Sleep Log ─────
+function toggleManualLog() {
+  var form = document.getElementById('manual-log-form');
+  if (form) form.classList.toggle('hidden');
+}
+
+async function submitManualLog() {
+  var bed = document.getElementById('manual-bed').value;
+  var wake = document.getElementById('manual-wake').value;
+  if (!bed || !wake) { showToast('Set both times', 'error'); return; }
+  var btn = document.getElementById('btn-manual-log');
+  if (btn) { btn.disabled = true; btn.textContent = 'Logging...'; }
+  try {
+    await api('/api/sleep/log', 'POST', { bed_time: bed, wake_time: wake, mood: _plan.mood || 'calm' });
+    showToast('Sleep logged!', 'success');
+    setTimeout(function() { location.reload(); }, 600);
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Log it'; }
+  }
+}
+
 // ───── Sound Lab ─────
 async function generateTrack() {
   var prompt = document.getElementById('lab-prompt').value.trim();
@@ -339,79 +365,146 @@ async function generateTrack() {
 }
 
 // ───── Review ─────
+var _reviewRating = null;
+var _reviewMetrics = {};
+
+function selectReviewRating(btn, rating) {
+  _reviewRating = rating;
+  document.querySelectorAll('#review-stars .review-star-btn').forEach(function(b) {
+    b.classList.toggle('active', parseInt(b.dataset.rating) === rating);
+  });
+  var submit = document.getElementById('review-submit-btn');
+  if (submit) submit.disabled = false;
+  var detail = document.getElementById('review-detail');
+  if (detail) detail.classList.remove('hidden');
+}
+
+function selectMetric(key, btn, val) {
+  _reviewMetrics[key] = val;
+  var group = btn.parentElement;
+  group.querySelectorAll('.metric-btn').forEach(function(b) {
+    b.classList.toggle('active', parseInt(b.dataset.val) === val);
+  });
+}
+
+function toggleReviewFactor(btn) {
+  btn.classList.toggle('active');
+}
+
+async function submitBannerReview(sid) {
+  var factors = [];
+  document.querySelectorAll('#review-factors .factor-chip-review.active').forEach(function(c) {
+    factors.push(c.dataset.factor);
+  });
+  var notes = (document.getElementById('review-notes') || {}).value || '';
+  var metrics = Object.keys(_reviewMetrics).length > 0 ? _reviewMetrics : null;
+  var btn = document.getElementById('review-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  try {
+    await api('/api/sleep/review', 'POST', { session_id: sid, rating: _reviewRating, factors: factors, metrics: metrics, notes: notes });
+    var banner = document.getElementById('review-banner');
+    if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
+    showToast('Review saved', 'success');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
 async function submitReview(sid, rating) {
   await api('/api/sleep/review', 'POST', { session_id: sid, rating: rating });
-  var banner = document.querySelector('section');
+  var banner = document.getElementById('review-banner');
   if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
   showToast('Thanks!', 'success');
 }
 
 async function skipReview(sid) {
   await api('/api/sleep/review', 'POST', { session_id: sid, skip: true });
-  var banner = document.querySelector('section');
+  var banner = document.getElementById('review-banner');
   if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
 }
 
-// ───── Packs ─────
-(function() {
-  var section = document.getElementById('packs-section');
-  if (!section) return;
-  var loaded = false;
-  section.addEventListener('toggle', async function() {
-    if (!section.open || loaded) return;
-    loaded = true;
-    var list = document.getElementById('packs-list');
-    try {
-      var packs = await api('/api/packs');
-      list.textContent = '';
-      if (!packs || packs.length === 0) {
-        var empty = document.createElement('div');
-        empty.className = 'text-xs text-white/30 py-2';
-        empty.textContent = 'No packs available yet.';
-        list.appendChild(empty);
-        return;
+// ───── Referral ─────
+var _referralLoaded = false;
+function toggleReferralPanel() {
+  var panel = document.getElementById('referral-panel');
+  if (!panel) return;
+  var hidden = panel.classList.toggle('hidden');
+  if (!hidden && !_referralLoaded) {
+    _referralLoaded = true;
+    api('/api/user/referral').then(function(data) {
+      var input = document.getElementById('referral-link');
+      if (input && data.code) {
+        input.value = window.location.origin + '/refer/' + data.code;
       }
-      packs.forEach(function(p) {
-        var row = document.createElement('div');
-        row.className = 'flex items-center gap-3 py-2 border-b border-border';
-        var info = document.createElement('div');
-        info.className = 'flex-1';
-        var name = document.createElement('div');
-        name.className = 'text-sm font-medium text-white';
-        name.textContent = p.name;
-        var desc = document.createElement('div');
-        desc.className = 'text-[0.65rem] text-white/30';
-        desc.textContent = (p.description || '') + ' · ' + (p.track_ids ? p.track_ids.length : 0) + ' tracks';
-        info.appendChild(name);
-        info.appendChild(desc);
-        var btn = document.createElement('button');
-        btn.className = 'btn btn-sm btn-ghost';
-        btn.textContent = p.price_credits + ' credits';
-        btn.onclick = function() { purchasePack(p.slug); };
-        row.appendChild(info);
-        row.appendChild(btn);
-        list.appendChild(row);
-      });
-    } catch (e) {
-      list.textContent = '';
-      var err = document.createElement('div');
-      err.className = 'text-xs text-white/30 py-2';
-      err.textContent = 'Error loading packs.';
-      list.appendChild(err);
+      var stats = document.getElementById('referral-stats');
+      if (stats && data.referrals_given !== undefined) {
+        stats.textContent = data.referrals_given + ' referral' + (data.referrals_given !== 1 ? 's' : '') + ' given (max ' + (data.max_referrals || 5) + ')';
+      }
+    });
+  }
+}
+
+function copyReferralLink() {
+  var input = document.getElementById('referral-link');
+  if (!input || !input.value) return;
+  navigator.clipboard.writeText(input.value).then(function() {
+    showToast('Referral link copied!', 'success');
+  });
+}
+
+function shareReferralLink() {
+  var input = document.getElementById('referral-link');
+  var url = (input && input.value) ? input.value : window.location.origin;
+  if (navigator.share) {
+    navigator.share({ title: 'sl33p-space', text: 'Check out sl33p-space — AI sleep soundscapes', url: url });
+  } else {
+    navigator.clipboard.writeText(url).then(function() {
+      showToast('Link copied!', 'success');
+    });
+  }
+}
+
+// ───── Gift banner ─────
+async function dismissGiftBanner() {
+  await api('/api/user/gifts/dismiss', 'POST');
+  var banner = document.getElementById('gift-banner');
+  if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
+}
+
+// ───── Active session ─────
+async function endActiveSession(sid) {
+  await api('/api/sleep/end', 'POST', { session_id: sid });
+  var banner = document.getElementById('active-session-banner');
+  if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
+  showToast('Session ended', 'success');
+  setTimeout(function() { location.reload(); }, 500);
+}
+
+// ───── Library scope filter ─────
+function filterTracks(scope, btn) {
+  document.querySelectorAll('.scope-pill').forEach(function(p) { p.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  var chips = document.querySelectorAll('.track-chip');
+  var visibleCount = 0;
+  chips.forEach(function(chip) {
+    var owner = chip.dataset.owner || 'public';
+    if (scope === 'all' || owner === scope) {
+      chip.style.display = '';
+      visibleCount++;
+    } else {
+      chip.style.display = 'none';
     }
   });
-})();
-
-async function purchasePack(slug) {
-  try {
-    var result = await api('/api/packs/' + slug + '/purchase', 'POST');
-    if (result.error) {
-      showToast(result.error, 'error');
-    } else {
-      showToast('Purchased ' + result.pack + '!', 'success');
-    }
-  } catch (e) {
-    showToast('Error: ' + (e.message || 'Purchase failed'), 'error');
+  var strip = document.getElementById('track-strip');
+  var empty = strip.querySelector('.scope-empty');
+  if (visibleCount === 0 && !empty) {
+    var span = document.createElement('span');
+    span.className = 'col-span-2 text-xs text-white/30 py-2 scope-empty';
+    span.textContent = scope === 'mine' ? 'No tracks yet — create one in the Create tab!' : 'No public tracks available';
+    strip.appendChild(span);
+  } else if (visibleCount > 0 && empty) {
+    empty.remove();
   }
 }
 
@@ -440,50 +533,334 @@ async function purchasePack(slug) {
   }, 30000);
 })();
 
-// ───── Agent auto-greet ─────
-(function() {
+// ───── Agent Card (Tonight tab, top) ─────
+var _agentRec = null;
+var _agentChatOpen = false;
+
+function toggleAgentChat() {
+  var panel = document.getElementById('agent-chat-panel');
+  var btn = document.getElementById('agent-expand-btn');
+  if (!panel) return;
+  _agentChatOpen = !_agentChatOpen;
+  panel.classList.toggle('hidden', !_agentChatOpen);
+  if (btn) btn.classList.toggle('active', _agentChatOpen);
+  if (_agentChatOpen && !_agentChatGreeted) {
+    _agentChatGreeted = true;
+    _autoGreetChat();
+  }
+}
+
+var _agentChatGreeted = false;
+function _autoGreetChat() {
   var messages = document.getElementById('chat-messages');
   if (!messages) return;
-
-  function addMsg(text, cls) {
-    var div = document.createElement('div');
-    div.className = 'msg ' + cls;
-    div.textContent = text;
-    messages.appendChild(div);
-    messages.scrollTop = messages.scrollHeight;
-    return div;
-  }
-
-  setTimeout(async function() {
-    var thinking = addMsg('Checking your sleep history...', 'msg-agent msg-thinking');
+  var ref = _addChatRow(messages, 'Checking your sleep history...', 'agent', { raw: true, thinking: true });
+  (async function() {
     try {
       var data = await api('/api/chat', 'POST', { message: 'I just opened the app. Check my sleep history and recommend what I should listen to tonight.' });
-      thinking.classList.remove('msg-thinking');
       var resp = data.response || 'Ready when you are.';
-      thinking.textContent = resp;
-      if (resp.includes('/sleep?')) {
-        var match = resp.match(/(\/sleep\?[^\s"']+)/);
-        if (match) {
-          var link = document.createElement('div');
-          link.className = 'msg msg-agent';
-          var a = document.createElement('a');
-          a.href = match[1];
-          a.style.color = 'var(--accent)';
-          a.textContent = 'Start session →';
-          link.appendChild(a);
-          messages.appendChild(link);
-          messages.scrollTop = messages.scrollHeight;
-        }
+      ref.bubble.classList.remove('thinking');
+      ref.bubble.innerHTML = _renderMd(resp);
+      messages.scrollTop = messages.scrollHeight;
+    } catch (e) {
+      ref.bubble.classList.remove('thinking');
+      ref.bubble.textContent = 'Ready when you are.';
+    }
+  })();
+}
+
+function dismissAgentRec() {
+  var content = document.getElementById('agent-rec-content');
+  if (content) content.classList.add('hidden');
+  var empty = document.getElementById('agent-rec-empty');
+  if (empty) empty.classList.remove('hidden');
+}
+
+// Load agent recommendation on page load
+(function() {
+  var recCard = document.getElementById('agent-card');
+  if (!recCard) return;
+  (async function() {
+    try {
+      var data = await api('/api/sleep/recommend', 'POST', { mood: _plan.mood || 'calm' });
+      var loading = document.getElementById('agent-rec-loading');
+      var content = document.getElementById('agent-rec-content');
+      var empty = document.getElementById('agent-rec-empty');
+      if (loading) loading.classList.add('hidden');
+      if (data && data.reasoning) {
+        _agentRec = data;
+        var text = document.getElementById('agent-rec-text');
+        if (text) text.textContent = data.reasoning + (data.soundscape_title ? ' — Try "' + data.soundscape_title + '"' : '');
+        if (content) content.classList.remove('hidden');
+      } else {
+        if (empty) empty.classList.remove('hidden');
       }
     } catch (e) {
-      thinking.classList.remove('msg-thinking');
-      thinking.textContent = 'Ready when you are.';
+      var loading = document.getElementById('agent-rec-loading');
+      var empty = document.getElementById('agent-rec-empty');
+      if (loading) loading.classList.add('hidden');
+      if (empty) empty.classList.remove('hidden');
     }
-  }, 2500);
+  })();
 })();
 
-// Init calendar on load
+function useAgentPlan() {
+  if (!_agentRec) return;
+  if (_agentRec.soundscape_title) {
+    var chips = document.querySelectorAll('.track-chip');
+    for (var i = 0; i < chips.length; i++) {
+      if (chips[i].dataset.title === _agentRec.soundscape_title) {
+        pickTrack(chips[i]);
+        break;
+      }
+    }
+  }
+  var content = document.getElementById('agent-rec-content');
+  if (content) content.classList.add('hidden');
+  var planCard = document.getElementById('plan-card');
+  if (planCard) planCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  showToast('Plan applied', 'success');
+}
+
+// ───── APOD Background ─────
 (function() {
-  var grid = document.getElementById('cal-grid');
-  if (grid) loadCalendar(_calYear, _calMonth);
+  var bg = document.getElementById('plan-bg-apod');
+  if (!bg) return;
+  api('/api/scenes/cosmos').then(function(data) {
+    if (data && data.images && data.images.length > 0) {
+      var img = data.images[Math.floor(Math.random() * data.images.length)];
+      var preload = new Image();
+      preload.onload = function() {
+        bg.style.backgroundImage = 'url(' + img.url + ')';
+        bg.classList.add('loaded');
+      };
+      preload.src = img.url;
+    }
+  }).catch(function() {});
+})();
+
+// ───── Sound Lab Wizard ─────
+var _lab = { step: 1, theme: null, keywords: [], colour: null, apodTitle: '', apodExplanation: '' };
+
+var _labThemePrompts = {
+  cosmic: 'Deep space ambient soundscape with vast nebula drones, cosmic reverb, and interstellar pad textures',
+  rain: 'Soft rainfall ambience with distant rolling thunder, gentle wind, and cozy indoor warmth',
+  forest: 'Nighttime forest atmosphere with soft crickets, distant owl calls, and gentle breeze through pine trees',
+  ocean: 'Deep ocean underwater ambience with gentle currents, distant whale song, and bioluminescent shimmer',
+  warmth: 'Warm analog vinyl ambience with tape saturation, soft crackle, and slow jazz-influenced chord progressions',
+  zen: 'Tibetan singing bowls resonating in a mountain cave, deep meditative overtones, and tranquil stillness',
+  dream: 'Ethereal floating ambient with crystalline arpeggios, vast reverb spaces, and weightless pad textures'
+};
+
+var _labKeywordDescriptions = {
+  pads: 'warm evolving synthesizer pads',
+  piano: 'sparse piano notes with long reverb tails',
+  strings: 'slow legato string ensemble',
+  bells: 'gentle bell tones and chime-like resonances',
+  guitar: 'soft fingerpicked acoustic guitar',
+  bowls: 'singing bowls with deep resonant overtones',
+  clarinet: 'breathy clarinet with slow melodic phrases',
+  saxophone: 'soft tenor saxophone with warm jazzy tones',
+  cymbal: 'gentle cymbal swells and shimmering rides',
+  granular: 'granular synthesis textures and micro-sound particles',
+  tape_hiss: 'warm analog tape hiss and saturation',
+  vinyl_crackle: 'vintage vinyl crackle and warmth',
+  static: 'soft static and white noise textures',
+  rain: 'gentle rainfall and water droplets',
+  wind: 'soft wind and breeze sounds',
+  waves: 'ocean waves lapping gently',
+  crickets: 'nighttime crickets and insects',
+  thunder: 'distant rolling thunder',
+  whisper: 'soft ASMR whisper textures',
+  tapping: 'gentle rhythmic tapping sounds',
+  scratching: 'soft scratching and texture sounds',
+  brushing: 'light brushing and sweeping sounds',
+  crackling: 'warm fire crackling and popping',
+  pages: 'slow page turning and paper rustling',
+  minimal: 'minimal and spacious arrangement',
+  layered: 'densely layered and rich',
+  spacious: 'vast reverb and open spaces',
+  warm: 'warm and cozy tonal character',
+  cold: 'cool crystalline and icy textures'
+};
+
+var _labColourDescriptions = {
+  indigo: 'deep and vast with cosmic reverb spaces',
+  blue: 'cool and crystalline with calm floating tones',
+  teal: 'fluid and oceanic with gentle flowing movement',
+  green: 'organic and earthy with grounding natural textures',
+  rose: 'soft and warm with dreamy rosy undertones',
+  amber: 'warm analog vintage with golden tape-saturated tones',
+  violet: 'ethereal and mystical with shimmering spectral textures',
+  silver: 'pure and minimal with clean silver-toned clarity'
+};
+
+function labUpdateCharCount() {
+  var txt = document.getElementById('lab-custom-text');
+  var counter = document.getElementById('lab-char-count');
+  if (txt && counter) counter.textContent = txt.value.length + '/200';
+}
+
+function labSelectTheme(el) {
+  document.querySelectorAll('.lab-theme-card, .lab-apod-card').forEach(function(c) { c.classList.remove('active'); });
+  el.classList.add('active');
+  _lab.theme = el.dataset.theme;
+  _lab.apodTitle = el.dataset.apodTitle || '';
+  _lab.apodExplanation = el.dataset.apodExplanation || '';
+
+  var customInput = document.getElementById('lab-custom-input');
+  if (customInput) {
+    customInput.classList.toggle('hidden', _lab.theme !== 'custom');
+  }
+
+  if (_lab.theme !== 'custom') {
+    labNext();
+  }
+}
+
+function labToggleKeyword(el) {
+  var kw = el.dataset.keyword;
+  var idx = _lab.keywords.indexOf(kw);
+  if (idx >= 0) { _lab.keywords.splice(idx, 1); el.classList.remove('active'); }
+  else { _lab.keywords.push(kw); el.classList.add('active'); }
+}
+
+function labSelectColour(el) {
+  document.querySelectorAll('.lab-colour-swatch').forEach(function(s) { s.classList.remove('active'); });
+  el.classList.add('active');
+  _lab.colour = el.dataset.colour;
+  _labBuildPreview();
+  var preview = document.getElementById('lab-preview-prompt');
+  if (preview) preview.classList.remove('hidden');
+}
+
+function _labUpdateDots() {
+  document.querySelectorAll('.lab-dot').forEach(function(dot) {
+    var s = parseInt(dot.dataset.step);
+    dot.classList.remove('active', 'done');
+    if (s === _lab.step) dot.classList.add('active');
+    else if (s < _lab.step) dot.classList.add('done');
+  });
+}
+
+function labNext() {
+  if (_lab.step === 1 && !_lab.theme) { showToast('Pick a theme first', 'error'); return; }
+  if (_lab.step === 1 && _lab.theme === 'custom') {
+    var txt = (document.getElementById('lab-custom-text') || {}).value || '';
+    if (!txt.trim()) { showToast('Describe the sound you want', 'error'); return; }
+  }
+  if (_lab.step >= 3) return;
+  _lab.step++;
+  document.querySelectorAll('.lab-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.getElementById('lab-step-' + _lab.step).classList.add('active');
+  _labUpdateDots();
+  if (_lab.step === 3) _labBuildPreview();
+}
+
+function labBack() {
+  if (_lab.step <= 1) return;
+  _lab.step--;
+  document.querySelectorAll('.lab-panel').forEach(function(p) { p.classList.remove('active'); });
+  document.getElementById('lab-step-' + _lab.step).classList.add('active');
+  _labUpdateDots();
+}
+
+function _labBuildPrompt() {
+  var parts = [];
+  if (_lab.theme === 'custom') {
+    parts.push((document.getElementById('lab-custom-text') || {}).value || 'ambient sleep soundscape');
+  } else {
+    parts.push(_labThemePrompts[_lab.theme] || 'ambient sleep soundscape');
+  }
+  if (_lab.apodTitle && _lab.theme === 'cosmic') {
+    parts.push('Inspired by ' + _lab.apodTitle + '. ' + _lab.apodExplanation);
+  }
+  if (_lab.keywords.length > 0) {
+    var descs = _lab.keywords.map(function(k) { return _labKeywordDescriptions[k] || k.replace('_', ' '); });
+    parts.push('Featuring ' + descs.join(', '));
+  }
+  if (_lab.colour && _labColourDescriptions[_lab.colour]) {
+    parts.push(_labColourDescriptions[_lab.colour]);
+  }
+  return parts.join('. ');
+}
+
+function _labBuildTitle() {
+  if (_lab.theme === 'custom') return 'Custom Soundscape';
+  var base = _lab.theme.charAt(0).toUpperCase() + _lab.theme.slice(1);
+  if (_lab.colour) {
+    var col = _lab.colour.charAt(0).toUpperCase() + _lab.colour.slice(1);
+    return base + ' ' + col;
+  }
+  if (_lab.keywords.length > 0) {
+    var first = _lab.keywords[0].replace('_', ' ');
+    return base + ' ' + first.charAt(0).toUpperCase() + first.slice(1);
+  }
+  return base + ' Ambient';
+}
+
+function _labBuildPreview() {
+  var el = document.getElementById('lab-preview-prompt');
+  if (el) el.textContent = _labBuildPrompt();
+}
+
+async function labGenerate() {
+  var prompt = _labBuildPrompt();
+  var title = _labBuildTitle();
+  var genBtns = document.getElementById('lab-gen-buttons');
+  var generating = document.getElementById('lab-generating');
+  var waveform = document.getElementById('lab-waveform');
+  var result = document.getElementById('lab-result');
+
+  if (genBtns) genBtns.classList.add('hidden');
+  if (generating) generating.classList.remove('hidden');
+  if (waveform) waveform.classList.add('generating');
+  if (result) result.classList.add('hidden');
+
+  try {
+    var res = await api('/api/music/generate', 'POST', { prompt: prompt, title: title });
+    if (res.error) {
+      showToast(res.error, 'error');
+      if (genBtns) genBtns.classList.remove('hidden');
+    } else {
+      showToast('Track created: ' + (res.title || title), 'success');
+      if (result) {
+        var resultTitle = document.getElementById('lab-result-title');
+        var resultAudio = document.getElementById('lab-result-audio');
+        if (resultTitle) resultTitle.textContent = res.title || title;
+        if (resultAudio && res.src) { resultAudio.src = res.src; }
+        result.classList.remove('hidden');
+      }
+      await _refreshTrackList();
+    }
+  } catch (e) {
+    showToast('Generation failed: ' + e.message, 'error');
+    if (genBtns) genBtns.classList.remove('hidden');
+  } finally {
+    if (generating) generating.classList.add('hidden');
+    if (waveform) waveform.classList.remove('generating');
+  }
+}
+
+function labUseTonight() {
+  var resultAudio = document.getElementById('lab-result-audio');
+  if (resultAudio && resultAudio.src) {
+    var title = (document.getElementById('lab-result-title') || {}).textContent || '';
+    var trackCards = document.querySelectorAll('.track-card');
+    for (var i = 0; i < trackCards.length; i++) {
+      if (trackCards[i].querySelector('.track-card-title') &&
+          trackCards[i].querySelector('.track-card-title').textContent === title) {
+        trackCards[i].click();
+        break;
+      }
+    }
+    switchTab('tonight');
+    showToast('Track selected for tonight', 'success');
+  }
+}
+
+// Pre-load recent sessions so they're ready when user taps Insights
+(function() {
+  var list = document.getElementById('recent-sessions');
+  if (list) loadRecentSessions();
 })();

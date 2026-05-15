@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 
 from db import get_db
@@ -25,7 +26,6 @@ def upsert_user(uid: str, email: str = "", display_name: str = "",
     if db is None:
         return None
     now = datetime.now(timezone.utc)
-    from datetime import timedelta
     db.users.update_one(
         {"_id": uid},
         {
@@ -38,15 +38,14 @@ def upsert_user(uid: str, email: str = "", display_name: str = "",
             "$setOnInsert": {
                 "preferences": dict(DEFAULT_PREFERENCES),
                 "tier": {
-                    "type": "trial",
-                    "trial_started_at": now,
-                    "trial_ends_at": now + timedelta(days=7),
-                    "generations_per_month": 10,
+                    "type": "free",
+                    "generations_per_month": 2,
                     "generations_this_month": 0,
                     "generation_month": now.strftime("%Y-%m"),
                 },
                 "credits": {"balance": 0, "total_purchased": 0, "total_spent": 0},
-                "owned_pack_ids": [],
+                "referral_code": hashlib.sha256(uid.encode()).hexdigest()[:8],
+                "referrals_given": 0,
                 "created_at": now,
             },
         },
@@ -130,3 +129,13 @@ def get_persona(uid: str) -> str | None:
     if not user:
         return None
     return user.get("preferences", {}).get("persona")
+
+
+def update_timezone(uid: str, tz: str):
+    db = get_db()
+    if db is None:
+        return
+    db.users.update_one(
+        {"_id": uid},
+        {"$set": {"timezone": tz, "updated_at": datetime.now(timezone.utc)}},
+    )

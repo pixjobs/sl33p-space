@@ -45,10 +45,9 @@ def main():
 
     mcp_servers = [s["name"] for s in _config.get("mcp", {}).get("servers", []) if s.get("enabled")]
     has_adk = os.environ.get("GOOGLE_API_KEY")
-    dev_mode = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
     print(f"sl33p-space")
     print(f"  Web UI:  http://localhost:{port}")
-    print(f"  Auth:    {'DEV_MODE (no login required)' if dev_mode else 'Firebase Auth'}")
+    print(f"  Auth:    Firebase Auth")
     print(f"  Agent:   {'Gemini (ADK)' if has_adk else 'Fallback (set GOOGLE_API_KEY for Gemini)'}")
     print(f"  Audio:   browser (HTML5)")
     print(f"  MCP:     {', '.join(mcp_servers) if mcp_servers else 'none configured'}")

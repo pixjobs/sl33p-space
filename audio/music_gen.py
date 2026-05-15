@@ -7,8 +7,14 @@ Tracks are stored in MongoDB (tracks collection) and optionally uploaded to GCS.
 
 import hashlib
 import json
+import logging
 import os
+import random
+import re
 import shutil
+import time
+
+log = logging.getLogger(__name__)
 
 from audio.mood_tagger import tag_track_moods
 from audio.gcs_storage import is_gcs_enabled, upload_track as gcs_upload, get_gcs_info, delete_from_gcs
@@ -93,7 +99,7 @@ def _save_index(index: dict):
         json.dump(index, f, indent=2)
 
 
-TARGET_DURATION_MINUTES = 10
+TARGET_DURATION_MINUTES = 5
 CROSSFADE_MS = 3000
 MAX_TRACKS_PER_USER = 10
 MAX_TRACKS_TOTAL = 50
@@ -136,6 +142,50 @@ def _loop_with_crossfade(filepath: str, target_minutes: int = TARGET_DURATION_MI
     return filepath
 
 
+_ENRICH_SUFFIXES = [
+    "Ambient sleep music with warm analog pads, gentle evolving textures, deep sub-bass undertones. Slow tempo around 40 BPM, mellow and meditative.",
+    "Soft ambient soundscape with tape-saturated drones, slowly morphing harmonic layers, and vast reverb spaces. Deeply calming and sleep-inducing.",
+    "Gentle ambient composition with layered synthesizer pads, distant melodic fragments, warm low-end presence. Tranquil and immersive.",
+]
+
+
+_VOCAL_BLOCK = re.compile(
+    r'\b(lyrics?|singing|vocals?|verse|chorus|ballad|rap\b|hip\s*hop|pop\s+song|words\s+about|song\s+about|karaoke)\b',
+    re.IGNORECASE,
+)
+_VOCAL_ALLOW = re.compile(
+    r'\b(choir|ethereal\s+voice|throat\s+singing|vocal\s+texture|humming|wordless|whisper|asmr)\b',
+    re.IGNORECASE,
+)
+
+
+def _sanitize_prompt(raw: str) -> str:
+    """Strip explicit lyrics/vocal requests while preserving ambient vocal terms."""
+    if _VOCAL_ALLOW.search(raw):
+        return raw
+    if _VOCAL_BLOCK.search(raw):
+        log.info("Sanitised vocal/lyrics request from prompt")
+        cleaned = _VOCAL_BLOCK.sub('', raw).strip()
+        cleaned = re.sub(r'\s{2,}', ' ', cleaned)
+        return f"{cleaned}. Wordless, instrumental"
+    return raw
+
+
+def _enrich_prompt(raw: str) -> str:
+    """Pad short prompts with descriptive texture so Lyria reliably produces audio."""
+    raw = raw.strip()
+    if len(raw) >= 80:
+        return raw
+    suffix = random.choice(_ENRICH_SUFFIXES)
+    return f"{raw}. {suffix}"
+
+
+def _blend_with_preset(raw: str) -> str:
+    """Blend user input with a random preset for a retry after initial failure."""
+    preset_name, preset_prompt = random.choice(list(PRESET_PROMPTS.items()))
+    return f"{raw}. Variation on {preset_name}: {preset_prompt}"
+
+
 def generate_music(prompt: str, title: str = "",
                    model: str = "", user_id: str = "default") -> dict:
     """Generate music from a text prompt. Returns cached version if available."""
@@ -149,7 +199,9 @@ def generate_music(prompt: str, title: str = "",
     max_per_user = cfg.get("max_tracks_per_user", MAX_TRACKS_PER_USER)
     max_total = cfg.get("max_tracks_total", MAX_TRACKS_TOTAL)
 
-    full_prompt = f"{prompt}\n\n{SLEEP_STYLE}"
+    prompt = _sanitize_prompt(prompt)[:300]
+    enriched = _enrich_prompt(prompt)
+    full_prompt = f"{enriched}\n\n{SLEEP_STYLE}"
     key = _cache_key(full_prompt)
 
     # Check MongoDB cache first
@@ -199,6 +251,8 @@ def generate_music(prompt: str, title: str = "",
         os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
         filepath = os.path.join(LOCAL_CACHE_DIR, f"{key}.ogg")
         description = ""
+        gen_start = time.time()
+        lyria_calls = 0
 
         response = client.models.generate_content(
             model=model,
@@ -207,6 +261,7 @@ def generate_music(prompt: str, title: str = "",
                 response_modalities=["audio"],
             ),
         )
+        lyria_calls += 1
 
         audio_received = False
         if response.candidates and response.candidates[0].content:
@@ -217,6 +272,26 @@ def generate_music(prompt: str, title: str = "",
                     with open(filepath, "wb") as f:
                         f.write(part.inline_data.data)
                     audio_received = True
+
+        if not audio_received or not os.path.exists(filepath):
+            retry_prompt = f"{_blend_with_preset(prompt)}\n\n{SLEEP_STYLE}"
+            log.info("Lyria retry with blended preset prompt")
+            response = client.models.generate_content(
+                model=model,
+                contents=retry_prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["audio"],
+                ),
+            )
+            lyria_calls += 1
+            if response.candidates and response.candidates[0].content:
+                for part in response.candidates[0].content.parts:
+                    if part.text is not None:
+                        description = part.text
+                    elif part.inline_data is not None and part.inline_data.data:
+                        with open(filepath, "wb") as f:
+                            f.write(part.inline_data.data)
+                        audio_received = True
 
         if not audio_received or not os.path.exists(filepath):
             return {"error": "No audio data received from model"}
@@ -283,6 +358,18 @@ def generate_music(prompt: str, title: str = "",
         _save_index(index)
 
         src = gcs_url or f"/media/music/{key}.ogg"
+
+        try:
+            from db.usage import log_api_usage
+            elapsed = time.time() - gen_start
+            log_api_usage(
+                user_id=user_id, service="lyria", model=model,
+                duration_s=elapsed, cost_usd=0.07 * lyria_calls,
+                metadata={"track_id": key, "lyria_calls": lyria_calls,
+                           "prompt_length": len(prompt)},
+            )
+        except Exception:
+            pass
 
         return {
             "path": filepath,
@@ -358,7 +445,12 @@ def _track_entry(track: dict) -> dict:
         "mood_tags": track.get("mood_tags", []),
         "energy_level": track.get("energy_level", "low"),
         "avg_rating": track.get("avg_rating"),
+        "generated_by": track.get("generated_by", "system"),
     }
+
+
+def format_track_entry(track: dict) -> dict:
+    return _track_entry(track)
 
 
 def list_generated_music() -> list[dict]:

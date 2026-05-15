@@ -1,4 +1,20 @@
 <section class="bg-surface border border-border rounded-2xl overflow-hidden backdrop-blur-xl" id="plan-card" data-recommended-mood="{{ insights.recommended_mood if insights else 'calm' }}">
+  {% if insights and insights.available and insights.stats.reviewed_sessions >= 3 %}
+  <div class="insight-nudge px-5 py-2.5 border-b border-border flex items-center gap-2">
+    <svg class="w-2.5 h-5 shrink-0 opacity-40" viewBox="0 0 15 32" fill="none"><path d="M7.5 0C7.5 0 1.5 5.5 1.5 14c0 5 2.2 8.5 5.2 10.7.2.2.5.3.8.3.3 0 .6-.1.8-.3C11.3 22.5 13.5 19 13.5 14 13.5 5.5 7.5 0 7.5 0z" fill="#00684A"/></svg>
+    <span class="text-[0.7rem] text-white/40 leading-snug">
+      {% if insights.mood_track_matrix and insights.mood_track_matrix[0].sessions >= 2 %}
+        {{ insights.mood_track_matrix[0].track }} works best when you're {{ insights.mood_track_matrix[0].mood }} ({{ insights.mood_track_matrix[0].avg_rating }}/5 across {{ insights.mood_track_matrix[0].sessions }} sessions)
+      {% elif insights.best_hour is not none %}
+        Best-rated sleep starts around {{ insights.best_hour }}:00
+      {% elif insights.current_streak >= 2 %}
+        {{ insights.current_streak }}-night streak
+      {% elif insights.best_track %}
+        {{ insights.best_track.title }} is your top track at {{ insights.best_track.avg_rating }}/5
+      {% endif %}
+    </span>
+  </div>
+  {% endif %}
   <!-- Mood -->
   <div class="px-5 py-4 border-b border-border">
     <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25 mb-3">Mood</div>
@@ -15,24 +31,31 @@
   <div class="px-5 py-4 border-b border-border">
     <div class="flex items-center justify-between mb-3">
       <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Soundscape</div>
-      {% if tracks %}<span class="text-[0.55rem] text-white/20">{{ tracks | length }} tracks</span>{% endif %}
+      <div class="flex gap-1" id="library-scope-toggle">
+        <button class="scope-pill active" data-scope="all" onclick="filterTracks('all', this)">All</button>
+        <button class="scope-pill" data-scope="mine" onclick="filterTracks('mine', this)">Mine</button>
+        <button class="scope-pill" data-scope="public" onclick="filterTracks('public', this)">Public</button>
+      </div>
     </div>
-    <div class="flex gap-2.5 overflow-x-auto pb-2" id="track-strip">
+    <div class="grid grid-cols-2 gap-2" id="track-strip">
       {% if tracks %}
         {% for track in tracks %}
-        <button class="track-chip shrink-0 px-4 py-3 bg-transparent border border-border rounded-xl cursor-pointer transition-all min-w-[130px] text-left hover:border-border-hover hover:bg-surface-hover group" data-id="{{ track.id }}" data-src="{{ track.src or ('/media/music/' + track.filename) }}" data-title="{{ track.title }}" data-mood-tags="{{ track.mood_tags | join(',') }}" data-energy="{{ track.energy_level or 'low' }}" onclick="pickTrack(this)">
-          <div class="flex items-center gap-1.5 mb-1">
+        <button class="track-chip px-3 py-2.5 bg-transparent border border-border rounded-xl cursor-pointer transition-all text-left hover:border-border-hover hover:bg-surface-hover group" data-id="{{ track.id }}" data-src="{{ track.src or ('/media/music/' + track.filename) }}" data-title="{{ track.title }}" data-mood-tags="{{ track.mood_tags | join(',') }}" data-energy="{{ track.energy_level or 'low' }}" data-owner="{{ 'mine' if track.generated_by == uid else 'public' }}" onclick="pickTrack(this)">
+          <div class="flex items-center gap-1.5 mb-0.5">
             <span class="energy-dot e-{{ track.energy_level or 'low' }}"></span>
             <span class="text-[0.55rem] text-white/25 uppercase tracking-wider">{{ track.energy_level or 'low' }}</span>
+            {% if track.generated_by == uid %}
+            <span class="text-[0.5rem] text-violet-400/50 ml-auto">yours</span>
+            {% endif %}
           </div>
-          <span class="block text-[0.8rem] font-medium text-white/80 group-hover:text-white truncate">{{ track.title }}</span>
+          <span class="block text-[0.75rem] font-medium text-white/80 group-hover:text-white truncate">{{ track.title }}</span>
           {% if track.mood_tags %}
-          <span class="block text-[0.55rem] text-white/20 mt-1">{{ track.mood_tags | join(' · ') }}</span>
+          <span class="block text-[0.5rem] text-white/20 mt-0.5 truncate">{{ track.mood_tags | join(' · ') }}</span>
           {% endif %}
         </button>
         {% endfor %}
       {% else %}
-        <span class="text-xs text-white/30 py-2">No tracks yet &mdash; generating library...</span>
+        <span class="col-span-2 text-xs text-white/30 py-2">No tracks yet &mdash; generating library...</span>
       {% endif %}
     </div>
     {% if seeding or (tracks | length) < 5 %}
@@ -56,5 +79,24 @@
   <!-- Start -->
   <div class="p-5">
     <button class="w-full py-4 rounded-xl text-sm font-semibold cursor-pointer transition-all border-0" id="btn-start" onclick="startSleep()">Start Sleep</button>
+    <button class="w-full mt-2 py-2 bg-transparent border-0 text-[0.7rem] text-white/30 cursor-pointer hover:text-white/50 transition-colors" onclick="toggleManualLog()">Just log last night?</button>
+
+    <div class="hidden mt-3 pt-3 border-t border-border" id="manual-log-form">
+      <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25 mb-3">Log a sleep</div>
+      <div class="flex gap-3 mb-3">
+        <div class="flex-1">
+          <label class="block text-[0.6rem] text-white/30 mb-1">Bedtime</label>
+          <input type="time" id="manual-bed" value="23:00" class="w-full px-3 py-2 bg-white/5 border border-border rounded-lg text-sm text-white/80 outline-none focus:border-brand/40">
+        </div>
+        <div class="flex-1">
+          <label class="block text-[0.6rem] text-white/30 mb-1">Wake time</label>
+          <input type="time" id="manual-wake" value="07:00" class="w-full px-3 py-2 bg-white/5 border border-border rounded-lg text-sm text-white/80 outline-none focus:border-brand/40">
+        </div>
+      </div>
+      <div class="flex gap-3">
+        <button class="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-brand/20 text-brand border-0 cursor-pointer hover:bg-brand/30 transition-colors" id="btn-manual-log" onclick="submitManualLog()">Log it</button>
+        <button class="px-4 py-2.5 rounded-lg text-xs text-white/30 bg-transparent border border-border cursor-pointer hover:text-white/50 transition-colors" onclick="toggleManualLog()">Cancel</button>
+      </div>
+    </div>
   </div>
 </section>

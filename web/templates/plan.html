@@ -5,16 +5,148 @@
 {% endblock %}
 
 {% block content %}
+<div class="plan-bg-apod" id="plan-bg-apod"></div>
+
+{# ── Header: always visible ── #}
+<div class="plan-header">
+  <div class="flex items-center gap-2">
+    <h1 class="text-lg font-semibold">{{ greeting }}, {{ user_name }}</h1>
+    {% if user_tier %}
+      {% if user_tier.type == 'admin' %}
+        <span class="tier-badge tier-admin">Admin</span>
+      {% else %}
+        <span class="tier-badge tier-free">Free</span>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% if user_tier and user_tier.type != 'admin' %}
+  <div class="flex items-center gap-3 text-xs text-white/25 mt-0.5">
+    <span>{{ user_tier.generations_remaining or 0 }} / {{ user_tier.generations_per_month }} gens left</span>
+    {% if user_tier.credits_balance and user_tier.credits_balance > 0 %}<span>{{ user_tier.credits_balance }} credits</span>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if user_tier and user_tier.type != 'admin' %}
+<div class="mb-3">
+  <button class="w-full flex items-center gap-3 px-4 py-3 bg-surface border border-violet-500/15 rounded-xl cursor-pointer transition-all hover:border-violet-500/25 hover:bg-surface-hover text-left group" onclick="toggleReferralPanel()">
+    <span class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-violet-500/10 text-violet-400/60 group-hover:text-violet-400/90 transition-colors">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+    </span>
+    <div class="flex-1 min-w-0">
+      <div class="text-xs font-medium text-white/60 group-hover:text-white/80 transition-colors">Invite a friend</div>
+      <div class="text-[0.6rem] text-white/25">Share your link — you both get 1 credit</div>
+    </div>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 text-white/15 group-hover:text-white/30 transition-colors shrink-0"><path d="M9 18l6-6-6-6"/></svg>
+  </button>
+  <div id="referral-panel" class="hidden mt-2 bg-surface border border-violet-500/15 rounded-xl px-4 py-3">
+    <div class="flex items-center gap-2">
+      <input type="text" id="referral-link" readonly class="flex-1 bg-transparent border border-border rounded-lg px-3 py-1.5 text-xs text-white/50 font-mono" value="">
+      <button class="btn btn-sm btn-primary rounded-lg text-xs px-3" onclick="copyReferralLink()">Copy</button>
+      <button class="btn btn-sm btn-ghost rounded-lg text-xs px-2.5" onclick="shareReferralLink()" title="Share">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-3.5 h-3.5"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+      </button>
+    </div>
+    <div class="text-[0.6rem] text-white/20 mt-1.5" id="referral-stats"></div>
+  </div>
+</div>
+{% endif %}
+
 {% include "plan/_review_banner.html" %}
-{% include "plan/_stats.html" %}
-{% include "plan/_greeting.html" %}
-{% include "plan/_insights.html" %}
-{% include "plan/_main_card.html" %}
-{% include "plan/_sound_lab.html" %}
-{% include "plan/_packs.html" %}
-{% include "plan/_journal.html" %}
-{% include "plan/_agent_chat.html" %}
-{% include "plan/_recent.html" %}
+{% include "plan/_gift_banner.html" %}
+
+{# ── Tab bar ── #}
+<nav class="tab-bar" id="tab-bar">
+  <button class="tab active" data-tab="tonight" onclick="switchTab('tonight')">Tonight</button>
+  <button class="tab" data-tab="insights" onclick="switchTab('insights')">Insights</button>
+  <button class="tab" data-tab="library" onclick="switchTab('library')">Create</button>
+</nav>
+
+{# ── Tab: Tonight ── #}
+<div class="tab-panel active" id="panel-tonight">
+  {% if stats.total_sessions == 0 %}
+  <div class="onboarding-card" id="onboarding-card">
+    <div class="onboarding-title">Your sleep, understood</div>
+    <p class="onboarding-subtitle">Log your sleep, discover patterns, and drift off to AI-crafted soundscapes.</p>
+    <div class="onboarding-steps">
+      <div class="onboarding-step">
+        <div class="onboarding-step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        </div>
+        <div>
+          <div class="onboarding-step-title">Check in</div>
+          <div class="onboarding-step-desc">Tell us how you're feeling &mdash; or just log last night's sleep</div>
+        </div>
+      </div>
+      <div class="onboarding-step">
+        <div class="onboarding-step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        </div>
+        <div>
+          <div class="onboarding-step-title">Drift off</div>
+          <div class="onboarding-step-desc">Play AI-generated ambient music, or skip and just log</div>
+        </div>
+      </div>
+      <div class="onboarding-step">
+        <div class="onboarding-step-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+        </div>
+        <div>
+          <div class="onboarding-step-title">See patterns</div>
+          <div class="onboarding-step-desc">Rate your rest and watch insights build over time</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if active_session %}
+  <div class="active-session-banner" id="active-session-banner">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-amber-400" style="animation:seed-pulse 1.5s ease-in-out infinite"></span>
+      <span class="text-sm text-white/70">
+        You have {{ 'an active' if active_session.status == 'active' else 'a planned' }} session
+        {% if active_session.plan and active_session.plan.soundscape_title %}
+         &mdash; {{ active_session.plan.soundscape_title }}
+        {% endif %}
+      </span>
+    </div>
+    <div class="flex gap-2 mt-2">
+      <a href="/sleep?session={{ active_session._id }}" class="btn btn-sm btn-primary rounded-lg">Resume</a>
+      <button class="btn btn-sm btn-ghost rounded-lg" onclick="endActiveSession('{{ active_session._id }}')">End Session</button>
+    </div>
+  </div>
+  {% endif %}
+  {% include "plan/_agent_card.html" %}
+  <div class="flex gap-1.5 flex-wrap mb-3" id="persona-row">
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if not persona %} active{% endif %}" data-persona="" onclick="setPersona(this)">Default</button>
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'shift_worker' %} active{% endif %}" data-persona="shift_worker" onclick="setPersona(this)">&#9203; Shift</button>
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'emergency_services' %} active{% endif %}" data-persona="emergency_services" onclick="setPersona(this)">&#9977; First Responder</button>
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'shallow_sleeper' %} active{% endif %}" data-persona="shallow_sleeper" onclick="setPersona(this)">&#127769; Light Sleeper</button>
+    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'insomniac' %} active{% endif %}" data-persona="insomniac" onclick="setPersona(this)">&#9789; Insomniac</button>
+  </div>
+  {% include "plan/_main_card.html" %}
+</div>
+
+{# ── Tab: Insights ── #}
+<div class="tab-panel" id="panel-insights">
+  {% include "plan/_stats.html" %}
+  {% include "plan/_insights.html" %}
+  {% include "plan/_journal.html" %}
+</div>
+
+{# ── Tab: Library ── #}
+<div class="tab-panel" id="panel-library">
+  {% if user_tier and user_tier.type != 'admin' %}
+  <div class="flex items-center justify-between px-1 py-2 mb-2 text-xs text-white/30">
+    <span>{{ user_tier.generations_remaining or 0 }} generation{{ 's' if user_tier.generations_remaining != 1 else '' }} remaining this month</span>
+    {% if user_tier.credits_balance and user_tier.credits_balance > 0 %}
+    <span class="text-white/20">{{ user_tier.credits_balance }} credits</span>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% include "plan/_sound_lab.html" %}
+</div>
+
 {% endblock %}
 
 {% block scripts %}

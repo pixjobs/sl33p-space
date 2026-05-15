@@ -90,6 +90,22 @@ def get_all_tracks(include_archived: bool = False) -> list[dict]:
     return results
 
 
+def get_public_tracks() -> list[dict]:
+    db = get_db()
+    if db is None:
+        return []
+    cursor = db.tracks.find(
+        {"$or": [{"generated_by": "system"}, {"is_preset": True}],
+         "archived": {"$ne": True}},
+        sort=[("created_at", -1)],
+    )
+    results = []
+    for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        results.append(doc)
+    return results
+
+
 def get_tracks_by_mood(mood: str, limit: int = 20) -> list[dict]:
     db = get_db()
     if db is None:

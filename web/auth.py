@@ -1,90 +1,113 @@
 """
-Firebase Auth middleware with DEV_MODE bypass.
+Firebase Auth middleware.
 
-When DEV_MODE=true (or Firebase isn't configured), all requests get a
-stable dev user identity. In production, Firebase Admin SDK verifies
-the Authorization: Bearer <id-token> header.
+Firebase Admin SDK verifies the Authorization: Bearer <id-token> header
+on every request. No bypass mode — all users must sign in.
 """
 
 import functools
 import os
 
-from flask import g, jsonify, request
+from flask import g, jsonify, redirect, request, session
 
-
-DEV_USER = {
-    "uid": "dev-user-001",
-    "name": "Developer",
-    "email": "dev@localhost",
-    "picture": None,
-}
+ADMIN_EMAILS = {"hello@pixjobs.com"}
 
 _firebase_app = None
-_dev_mode = False
 
 
 def init_auth(app):
-    global _firebase_app, _dev_mode
+    global _firebase_app
 
-    _dev_mode = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
 
-    if not _dev_mode:
-        try:
-            import firebase_admin
-            from firebase_admin import credentials
+        cred_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+        if cred_path and os.path.exists(cred_path):
+            cred = credentials.Certificate(cred_path)
+            _firebase_app = firebase_admin.initialize_app(cred)
+        elif os.environ.get("FIREBASE_PROJECT_ID"):
+            _firebase_app = firebase_admin.initialize_app()
+        else:
+            app.logger.warning("Firebase not configured — auth will reject all requests")
+    except ImportError:
+        app.logger.warning("firebase-admin not installed — auth will reject all requests")
+    except Exception as e:
+        app.logger.warning(f"Firebase init failed ({e}) — auth will reject all requests")
 
-            cred_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
-            if cred_path and os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
-                _firebase_app = firebase_admin.initialize_app(cred)
-            elif os.environ.get("FIREBASE_PROJECT_ID"):
-                _firebase_app = firebase_admin.initialize_app()
-            else:
-                _dev_mode = True
-                app.logger.warning("Firebase not configured — running in DEV_MODE")
-        except ImportError:
-            _dev_mode = True
-            app.logger.warning("firebase-admin not installed — running in DEV_MODE")
-        except Exception as e:
-            _dev_mode = True
-            app.logger.warning(f"Firebase init failed ({e}) — running in DEV_MODE")
+    app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
 
     @app.before_request
     def _set_user():
-        if _dev_mode:
-            g.user = dict(DEV_USER)
-            _sync_user_to_db(g.user)
-            return
-
+        # 1. Try Bearer token (API calls from JS)
         auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            g.user = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                from firebase_admin import auth
+                decoded = auth.verify_id_token(token, app=_firebase_app)
+                g.user = {
+                    "uid": decoded["uid"],
+                    "name": decoded.get("name", ""),
+                    "email": decoded.get("email", ""),
+                    "picture": decoded.get("picture"),
+                }
+                _sync_user_to_db(g.user)
+                return
+            except Exception:
+                pass
+
+        # 2. Fall back to session cookie (page loads)
+        if "user" in session:
+            g.user = session["user"]
             return
 
-        token = auth_header[7:]
+        g.user = None
+
+    @app.route("/api/auth/session", methods=["POST"])
+    def create_session():
+        data = request.get_json(force=True)
+        token = data.get("token", "")
+        if not token:
+            return jsonify({"error": "No token"}), 400
         try:
             from firebase_admin import auth
             decoded = auth.verify_id_token(token, app=_firebase_app)
-            g.user = {
+            user = {
                 "uid": decoded["uid"],
                 "name": decoded.get("name", ""),
                 "email": decoded.get("email", ""),
                 "picture": decoded.get("picture"),
             }
-            _sync_user_to_db(g.user)
-        except Exception:
-            g.user = None
+            session["user"] = user
+            _sync_user_to_db(user)
+            return jsonify({"ok": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 401
 
-    app.jinja_env.globals["dev_mode"] = _dev_mode
+    @app.route("/api/auth/signout", methods=["POST"])
+    def destroy_session():
+        session.pop("user", None)
+        return jsonify({"ok": True})
 
 
 def require_auth(f):
     @functools.wraps(f)
     def decorated(*args, **kwargs):
-        if _dev_mode:
-            return f(*args, **kwargs)
         if not getattr(g, "user", None):
-            return jsonify({"error": "Authentication required"}), 401
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Authentication required"}), 401
+            return redirect("/")
+        return f(*args, **kwargs)
+    return decorated
+
+
+def require_admin(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        user = get_current_user()
+        if not user or user.get("email") not in ADMIN_EMAILS:
+            return jsonify({"error": "Admin access required"}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -98,8 +121,9 @@ def get_user_id() -> str:
     return user["uid"] if user else "anonymous"
 
 
-def is_dev_mode() -> bool:
-    return _dev_mode
+def is_admin() -> bool:
+    user = get_current_user()
+    return bool(user and user.get("email") in ADMIN_EMAILS)
 
 
 def require_login(f):
@@ -107,8 +131,7 @@ def require_login(f):
     def decorated(*args, **kwargs):
         user = get_current_user()
         if not user:
-            return jsonify({"error": "Login required", "dev_mode": _dev_mode}), 401
-        g.user = user  # Ensure user is set for the route
+            return jsonify({"error": "Login required"}), 401
         return f(*args, **kwargs)
     return decorated
 
@@ -125,6 +148,9 @@ def _sync_user_to_db(user: dict):
         upsert_user(uid, email=user.get("email", ""),
                      display_name=user.get("name", ""),
                      picture=user.get("picture"))
+        if user.get("email") in ADMIN_EMAILS:
+            from db.tiers import set_admin
+            set_admin(uid)
         _synced_users.add(uid)
     except Exception:
         pass

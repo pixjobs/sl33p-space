@@ -1,0 +1,521 @@
+{% extends "base.html" %}
+{% block title %}sl33p-space — Admin{% endblock %}
+{% block styles %}
+<style>
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+.stat-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 0.75rem; padding: 1.25rem; }
+.stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(255,255,255,0.35); margin-bottom: 0.25rem; }
+.stat-value { font-size: 1.5rem; font-weight: 700; color: #7c5cfc; }
+.stat-sub { font-size: 0.7rem; color: rgba(255,255,255,0.3); margin-top: 0.25rem; }
+
+.admin-section { margin-bottom: 2rem; }
+.admin-section h2 { font-size: 1rem; font-weight: 600; color: rgba(255,255,255,0.7); margin-bottom: 1rem; }
+
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.admin-table th { text-align: left; padding: 0.5rem 0.75rem; font-weight: 500; color: rgba(255,255,255,0.4); text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.admin-table td { padding: 0.5rem 0.75rem; color: rgba(255,255,255,0.6); border-bottom: 1px solid rgba(255,255,255,0.04); }
+.admin-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+.tier-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; }
+.tier-admin { background: rgba(124,92,252,0.15); color: #7c5cfc; }
+.tier-subscriber { background: rgba(52,211,153,0.15); color: #34d399; }
+.tier-trial { background: rgba(251,191,36,0.15); color: #fbbf24; }
+.tier-free { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.4); }
+
+.admin-play-btn { background: none; border: 1px solid rgba(255,255,255,0.12); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: rgba(255,255,255,0.4); transition: all 0.15s; flex-shrink: 0; }
+.admin-play-btn:hover { border-color: #7c5cfc; color: #7c5cfc; }
+.admin-play-btn.playing { border-color: #7c5cfc; color: #7c5cfc; background: rgba(124,92,252,0.1); }
+.admin-play-btn svg { width: 12px; height: 12px; }
+
+.energy-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.e-low { background: #34d399; }
+.e-medium { background: #fbbf24; }
+.e-high { background: #f87171; }
+
+.prompt-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; color: rgba(255,255,255,0.3); cursor: help; }
+.mood-icons { font-size: 0.85rem; letter-spacing: 2px; }
+.system-badge { background: rgba(124,92,252,0.12); color: #a78bfa; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; }
+.archived-tag { color: rgba(255,255,255,0.2); font-size: 0.6rem; margin-left: 0.25rem; }
+
+.admin-player { display: none; position: sticky; bottom: 0; background: rgba(15,15,30,0.95); border-top: 1px solid rgba(255,255,255,0.08); padding: 0.75rem 1rem; backdrop-filter: blur(12px); border-radius: 0 0 0.75rem 0.75rem; margin-top: 1rem; }
+.admin-player.visible { display: flex; align-items: center; gap: 0.75rem; }
+.admin-player-title { font-size: 0.8rem; color: rgba(255,255,255,0.7); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-player audio { height: 32px; flex: 2; min-width: 0; }
+
+.page-controls { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-top: 1rem; }
+.page-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 0.5rem; padding: 0.3rem 0.75rem; color: rgba(255,255,255,0.5); font-size: 0.75rem; cursor: pointer; transition: all 0.15s; }
+.page-btn:hover:not(:disabled) { border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.7); }
+.page-btn:disabled { opacity: 0.3; cursor: default; }
+.page-info { font-size: 0.7rem; color: rgba(255,255,255,0.3); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-white/90">Admin Dashboard</h1>
+    <a href="/plan" class="btn btn-sm btn-ghost">Back to app</a>
+  </div>
+
+  <div class="admin-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Users</div>
+      <div class="stat-value">{{ stats.total_users }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Active (7d)</div>
+      <div class="stat-value">{{ stats.active_users_7d }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Sleep Sessions</div>
+      <div class="stat-value">{{ stats.total_sessions }}</div>
+      <div class="stat-sub">{{ stats.reviewed_sessions }} reviewed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Tracks</div>
+      <div class="stat-value">{{ stats.total_tracks }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Est. Cost (30d)</div>
+      <div class="stat-value">${{ "%.2f"|format(stats.estimated_cost_30d) }}</div>
+      {% for svc, info in stats.cost_by_service.items() %}
+      <div class="stat-sub">{{ svc }}: {{ info.calls }} calls / ${{ "%.2f"|format(info.cost) }}</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="admin-section">
+    <h2>Users</h2>
+    <div class="overflow-x-auto">
+      <table class="admin-table" id="user-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Tier</th>
+            <th>Gens</th>
+            <th>Credits</th>
+            <th>Sessions</th>
+            <th>Cost (30d)</th>
+            <th>Last Active</th>
+            <th>Gift</th>
+          </tr>
+        </thead>
+        <tbody id="user-tbody">
+          <tr><td colspan="9" style="text-align:center;color:rgba(255,255,255,0.3);padding:2rem">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="admin-section">
+    <h2>Library Seed</h2>
+    <p class="text-xs text-white/30 mb-3">Generate shared preset tracks for all users. Each track takes ~2 min (Lyria generation).</p>
+    <div class="flex items-center gap-3">
+      <select id="seed-count" style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.15);border-radius:0.5rem;padding:0.4rem 0.75rem;color:rgba(255,255,255,0.7);font-size:0.8rem;-webkit-appearance:none;appearance:none">
+        <option value="1">1 track</option>
+        <option value="3" selected>3 tracks</option>
+        <option value="5">5 tracks</option>
+        <option value="10">10 tracks</option>
+      </select>
+      <button class="btn btn-sm btn-primary" id="seed-btn" onclick="seedTracks()">Seed Tracks</button>
+      <span class="text-xs text-white/30" id="seed-status"></span>
+    </div>
+  </div>
+
+  <div class="admin-section">
+    <h2>Track Library</h2>
+    <div class="overflow-x-auto">
+      <table class="admin-table" id="track-table">
+        <thead>
+          <tr>
+            <th style="width:36px"></th>
+            <th>Title</th>
+            <th>Creator</th>
+            <th>Mood</th>
+            <th>Energy</th>
+            <th>Prompt</th>
+            <th>Size</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody id="track-tbody">
+          <tr><td colspan="8" style="text-align:center;color:rgba(255,255,255,0.3);padding:2rem">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="page-controls" id="track-paging"></div>
+  </div>
+
+  <div class="admin-player" id="admin-player">
+    <button class="admin-play-btn playing" id="admin-player-btn" onclick="adminPlayerToggle()">
+      <svg viewBox="0 0 24 24" fill="currentColor" id="admin-player-icon"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+    </button>
+    <span class="admin-player-title" id="admin-player-title"></span>
+    <audio id="admin-player-audio"></audio>
+  </div>
+
+  <div class="admin-section">
+    <h2>Daily Usage (30d)</h2>
+    <div class="overflow-x-auto">
+      <table class="admin-table" id="usage-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Lyria</th>
+            <th>Gemini</th>
+            <th>Cost</th>
+          </tr>
+        </thead>
+        <tbody id="usage-tbody">
+          <tr><td colspan="4" style="text-align:center;color:rgba(255,255,255,0.3);padding:2rem">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var tierClasses = { admin: 'tier-admin', subscriber: 'tier-subscriber', trial: 'tier-trial', free: 'tier-free' };
+
+  function td(text) {
+    var el = document.createElement('td');
+    el.textContent = text || '';
+    return el;
+  }
+
+  function tierTd(tier) {
+    var el = document.createElement('td');
+    var badge = document.createElement('span');
+    badge.className = 'tier-badge ' + (tierClasses[tier] || 'tier-free');
+    badge.textContent = tier || 'free';
+    el.appendChild(badge);
+    return el;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '-';
+    var d = new Date(iso);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+  }
+
+  function emptyRow(cols, msg) {
+    var tr = document.createElement('tr');
+    var c = document.createElement('td');
+    c.setAttribute('colspan', cols);
+    c.style.textAlign = 'center';
+    c.style.color = 'rgba(255,255,255,0.3)';
+    c.style.padding = '2rem';
+    c.textContent = msg;
+    tr.appendChild(c);
+    return tr;
+  }
+
+  var moodIcons = { calm: '\u{1F319}', dreamy: '\u{2601}\u{FE0F}', dark: '\u{1F311}', uplifting: '\u{2728}', melancholic: '\u{1F327}', peaceful: '\u{1F54A}', mysterious: '\u{1F52E}', warm: '\u{1F525}', cold: '\u{2744}\u{FE0F}', ethereal: '\u{1F30C}', nostalgic: '\u{1F4FB}', organic: '\u{1F33F}' };
+  var _trackPage = 1;
+  var _playingSrc = null;
+  var _adminAudio = null;
+
+  function loadTracks(page) {
+    _trackPage = page;
+    api('/api/admin/tracks?page=' + page + '&per_page=20').then(function(data) {
+      var tbody = document.getElementById('track-tbody');
+      tbody.textContent = '';
+      if (!data.tracks || data.tracks.length === 0) {
+        tbody.appendChild(emptyRow(8, 'No tracks yet'));
+        buildPaging(0, 1, 1);
+        return;
+      }
+      data.tracks.forEach(function(t) {
+        var tr = document.createElement('tr');
+
+        var playTd = document.createElement('td');
+        var playBtn = document.createElement('button');
+        playBtn.className = 'admin-play-btn' + (_playingSrc === t.src ? ' playing' : '');
+        playBtn.dataset.src = t.src;
+        playBtn.dataset.title = t.title;
+        var playSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        playSvg.setAttribute('viewBox', '0 0 24 24');
+        playSvg.setAttribute('fill', 'currentColor');
+        if (_playingSrc === t.src) {
+          var r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          r1.setAttribute('x','6'); r1.setAttribute('y','4'); r1.setAttribute('width','4'); r1.setAttribute('height','16');
+          var r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          r2.setAttribute('x','14'); r2.setAttribute('y','4'); r2.setAttribute('width','4'); r2.setAttribute('height','16');
+          playSvg.appendChild(r1); playSvg.appendChild(r2);
+        } else {
+          var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          poly.setAttribute('points', '6 3 20 12 6 21 6 3');
+          playSvg.appendChild(poly);
+        }
+        playBtn.appendChild(playSvg);
+        playBtn.addEventListener('click', function() { adminPlayTrack(t.src, t.title); });
+        playTd.appendChild(playBtn);
+        tr.appendChild(playTd);
+
+        var titleTd = td(t.title);
+        if (t.archived) {
+          var arc = document.createElement('span');
+          arc.className = 'archived-tag';
+          arc.textContent = '(archived)';
+          titleTd.appendChild(arc);
+        }
+        tr.appendChild(titleTd);
+
+        var creatorTd = document.createElement('td');
+        if (t.is_preset || t.created_by === 'System') {
+          var badge = document.createElement('span');
+          badge.className = 'system-badge';
+          badge.textContent = 'System';
+          creatorTd.appendChild(badge);
+        } else {
+          creatorTd.textContent = t.created_by;
+        }
+        tr.appendChild(creatorTd);
+
+        var moodTd = document.createElement('td');
+        moodTd.className = 'mood-icons';
+        var moods = (t.mood_tags || []).slice(0, 3);
+        moodTd.textContent = moods.map(function(m) { return moodIcons[m] || m; }).join(' ');
+        moodTd.title = (t.mood_tags || []).join(', ');
+        tr.appendChild(moodTd);
+
+        var energyTd = document.createElement('td');
+        var dot = document.createElement('span');
+        dot.className = 'energy-dot e-' + (t.energy_level || 'low');
+        dot.title = t.energy_level || 'low';
+        energyTd.appendChild(dot);
+        tr.appendChild(energyTd);
+
+        var promptTd = document.createElement('td');
+        promptTd.className = 'prompt-cell';
+        promptTd.textContent = t.prompt ? (t.prompt.length > 60 ? t.prompt.substring(0, 60) + '...' : t.prompt) : '';
+        promptTd.title = t.prompt || '';
+        tr.appendChild(promptTd);
+
+        tr.appendChild(td(t.size_kb ? t.size_kb + ' KB' : '-'));
+        tr.appendChild(td(fmtDate(t.created_at)));
+
+        tbody.appendChild(tr);
+      });
+      buildPaging(data.total, data.page, data.pages);
+    });
+  }
+
+  function buildPaging(total, page, pages) {
+    var el = document.getElementById('track-paging');
+    el.textContent = '';
+    if (pages <= 1) return;
+
+    var prev = document.createElement('button');
+    prev.className = 'page-btn';
+    prev.textContent = 'Prev';
+    prev.disabled = page <= 1;
+    prev.addEventListener('click', function() { loadTracks(page - 1); });
+    el.appendChild(prev);
+
+    var info = document.createElement('span');
+    info.className = 'page-info';
+    info.textContent = 'Page ' + page + ' of ' + pages + ' (' + total + ' tracks)';
+    el.appendChild(info);
+
+    var next = document.createElement('button');
+    next.className = 'page-btn';
+    next.textContent = 'Next';
+    next.disabled = page >= pages;
+    next.addEventListener('click', function() { loadTracks(page + 1); });
+    el.appendChild(next);
+  }
+
+  function adminPlayTrack(src, title) {
+    if (!_adminAudio) {
+      _adminAudio = document.getElementById('admin-player-audio');
+      _adminAudio.addEventListener('ended', function() {
+        _playingSrc = null;
+        updatePlayButtons();
+        document.getElementById('admin-player').classList.remove('visible');
+      });
+    }
+    var player = document.getElementById('admin-player');
+    if (_playingSrc === src) {
+      if (_adminAudio.paused) {
+        _adminAudio.play();
+      } else {
+        _adminAudio.pause();
+        _playingSrc = null;
+        updatePlayButtons();
+        player.classList.remove('visible');
+        return;
+      }
+    } else {
+      _adminAudio.src = src;
+      _adminAudio.play();
+      _playingSrc = src;
+    }
+    document.getElementById('admin-player-title').textContent = title;
+    player.classList.add('visible');
+    updatePlayButtons();
+  }
+
+  window.adminPlayerToggle = function() {
+    if (!_adminAudio) return;
+    if (_adminAudio.paused) {
+      _adminAudio.play();
+    } else {
+      _adminAudio.pause();
+      _playingSrc = null;
+      updatePlayButtons();
+      document.getElementById('admin-player').classList.remove('visible');
+    }
+  };
+
+  function updatePlayButtons() {
+    document.querySelectorAll('.admin-play-btn[data-src]').forEach(function(btn) {
+      var svg = btn.querySelector('svg');
+      if (!svg) return;
+      svg.textContent = '';
+      if (btn.dataset.src === _playingSrc) {
+        btn.classList.add('playing');
+        var r1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        r1.setAttribute('x','6'); r1.setAttribute('y','4'); r1.setAttribute('width','4'); r1.setAttribute('height','16');
+        var r2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        r2.setAttribute('x','14'); r2.setAttribute('y','4'); r2.setAttribute('width','4'); r2.setAttribute('height','16');
+        svg.appendChild(r1); svg.appendChild(r2);
+      } else {
+        btn.classList.remove('playing');
+        var poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        poly.setAttribute('points', '6 3 20 12 6 21 6 3');
+        svg.appendChild(poly);
+      }
+    });
+  }
+
+  loadTracks(1);
+
+  function giftCredits(uid, amount) {
+    api('/api/admin/gift-credits', 'POST', { uid: uid, amount: amount }).then(function(data) {
+      if (data.error) {
+        alert('Error: ' + data.error);
+        return;
+      }
+      var el = document.getElementById('credits-' + uid);
+      if (el) el.textContent = String(data.new_balance);
+    });
+  }
+
+  window.seedTracks = function() {
+    var btn = document.getElementById('seed-btn');
+    var status = document.getElementById('seed-status');
+    var n = parseInt(document.getElementById('seed-count').value);
+    btn.disabled = true;
+    btn.textContent = 'Seeding...';
+    status.textContent = 'This may take several minutes';
+    api('/api/admin/seed', 'POST', { n: n }).then(function(data) {
+      btn.disabled = false;
+      btn.textContent = 'Seed Tracks';
+      if (data.error) {
+        status.textContent = 'Error: ' + data.error;
+      } else {
+        var msg = data.generated + ' track(s) generated';
+        if (data.errors && data.errors.length > 0) msg += ', ' + data.errors.length + ' failed';
+        status.textContent = msg;
+      }
+    });
+  };
+
+  api('/api/admin/users').then(function(data) {
+    var tbody = document.getElementById('user-tbody');
+    tbody.textContent = '';
+    if (!data.users || data.users.length === 0) {
+      tbody.appendChild(emptyRow(9, 'No users yet'));
+      return;
+    }
+    data.users.forEach(function(u) {
+      var tr = document.createElement('tr');
+
+      var userTd = document.createElement('td');
+      var nameSpan = document.createElement('span');
+      nameSpan.textContent = u.email;
+      nameSpan.style.display = 'block';
+      userTd.appendChild(nameSpan);
+      if (u.email_hint) {
+        var hintSpan = document.createElement('span');
+        hintSpan.textContent = u.email_hint;
+        hintSpan.style.fontSize = '0.6rem';
+        hintSpan.style.color = 'rgba(255,255,255,0.25)';
+        hintSpan.style.display = 'block';
+        userTd.appendChild(hintSpan);
+      }
+      tr.appendChild(userTd);
+
+      tr.appendChild(tierTd(u.tier));
+      tr.appendChild(td(String(u.generations_this_month)));
+
+      var creditsTd = document.createElement('td');
+      creditsTd.id = 'credits-' + u.uid;
+      creditsTd.textContent = String(u.credits_balance || 0);
+      tr.appendChild(creditsTd);
+
+      tr.appendChild(td(String(u.session_count)));
+      tr.appendChild(td('$' + u.api_cost_30d.toFixed(2)));
+      tr.appendChild(td(fmtDate(u.last_active)));
+
+      var giftTd = document.createElement('td');
+      var giftWrap = document.createElement('div');
+      giftWrap.style.display = 'flex';
+      giftWrap.style.alignItems = 'center';
+      giftWrap.style.gap = '0.25rem';
+      var giftSel = document.createElement('select');
+      giftSel.style.cssText = 'background:#1a1a2e;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:0.15rem 0.3rem;color:rgba(255,255,255,0.6);font-size:0.7rem;-webkit-appearance:none';
+      [1,2,5].forEach(function(n) {
+        var opt = document.createElement('option');
+        opt.value = n; opt.textContent = n;
+        giftSel.appendChild(opt);
+      });
+      giftWrap.appendChild(giftSel);
+      var giftBtn = document.createElement('button');
+      giftBtn.className = 'page-btn';
+      giftBtn.style.padding = '0.15rem 0.5rem';
+      giftBtn.style.fontSize = '0.65rem';
+      giftBtn.textContent = 'Gift';
+      giftBtn.addEventListener('click', (function(uid, sel) {
+        return function() { giftCredits(uid, parseInt(sel.value)); };
+      })(u.uid, giftSel));
+      giftWrap.appendChild(giftBtn);
+      giftTd.appendChild(giftWrap);
+      tr.appendChild(giftTd);
+
+      tbody.appendChild(tr);
+    });
+  });
+
+  api('/api/admin/usage').then(function(data) {
+    var tbody = document.getElementById('usage-tbody');
+    tbody.textContent = '';
+    if (!data.daily || data.daily.length === 0) {
+      tbody.appendChild(emptyRow(4, 'No usage data'));
+      return;
+    }
+    data.daily.forEach(function(d) {
+      var tr = document.createElement('tr');
+      tr.appendChild(td(d.date));
+      tr.appendChild(td(String(d.lyria_calls)));
+      tr.appendChild(td(String(d.gemini_calls)));
+      tr.appendChild(td('$' + d.cost.toFixed(4)));
+      tbody.appendChild(tr);
+    });
+    var totalTr = document.createElement('tr');
+    totalTr.style.fontWeight = '600';
+    totalTr.style.borderTop = '2px solid rgba(255,255,255,0.12)';
+    totalTr.appendChild(td('Total'));
+    var callsTd = td(data.total_calls + ' calls');
+    callsTd.setAttribute('colspan', '2');
+    totalTr.appendChild(callsTd);
+    totalTr.appendChild(td('$' + data.total_cost.toFixed(4)));
+    tbody.appendChild(totalTr);
+  });
+})();
+</script>
+{% endblock %}

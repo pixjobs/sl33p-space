@@ -15,12 +15,12 @@ def _round(value: Any, digits: int = 1):
         return None
 
 
-def _default_insights(user_id: str, reason: str = "MongoDB is not connected") -> dict:
+def _default_insights(user_id: str, reason: str = "not configured") -> dict:
     return {
         "user_id": user_id,
         "available": False,
         "reason": reason,
-        "summary": "Connect MongoDB and complete a few reviewed sessions to unlock personalized sleep insights.",
+        "summary": "Start logging and reviewing your sleep to unlock personalised insights.",
         "recommended_mood": "calm",
         "best_track": None,
         "best_mood": None,
@@ -36,6 +36,11 @@ def _default_insights(user_id: str, reason: str = "MongoDB is not connected") ->
         "track_performance": [],
         "factor_correlations": [],
         "recent_pattern": [],
+        "best_hour": None,
+        "best_hour_rating": None,
+        "current_streak": 0,
+        "longest_streak": 0,
+        "mood_track_matrix": [],
     }
 
 
@@ -66,6 +71,9 @@ def get_user_sleep_insights(user_id: str, days: int = 30) -> dict:
             "reviewed_sessions": {"$sum": 1},
             "avg_rating": {"$avg": "$review.rating"},
             "avg_duration": {"$avg": "$actual.duration_minutes"},
+            "avg_depth": {"$avg": "$review.metrics.depth"},
+            "avg_energy": {"$avg": "$review.metrics.morning_energy"},
+            "avg_interruptions": {"$avg": "$review.metrics.interruptions"},
         }},
     ]))
     stats_doc = stats_rows[0] if stats_rows else {}
@@ -125,6 +133,92 @@ def get_user_sleep_insights(user_id: str, days: int = 30) -> dict:
         for row in factor_rows
     ]
 
+    # ── Sleep window: best hour to start sleeping ──
+    hour_rows = list(db.sleep_sessions.aggregate([
+        {"$match": {**reviewed_match, "actual.started_at": {"$ne": None}}},
+        {"$project": {
+            "hour": {"$hour": "$actual.started_at"},
+            "rating": "$review.rating",
+        }},
+        {"$group": {
+            "_id": "$hour",
+            "sessions": {"$sum": 1},
+            "avg_rating": {"$avg": "$rating"},
+        }},
+        {"$match": {"sessions": {"$gte": 1}}},
+        {"$sort": {"avg_rating": -1, "sessions": -1}},
+    ]))
+    best_hour = None
+    best_hour_rating = None
+    if hour_rows:
+        best_hour = hour_rows[0]["_id"]
+        best_hour_rating = _round(hour_rows[0]["avg_rating"])
+
+    # ── Streak: consecutive days with sessions ──
+    streak_rows = list(db.sleep_sessions.find(
+        {"user_id": user_id, "status": {"$in": ["completed", "reviewed"]},
+         "actual.started_at": {"$ne": None}},
+        projection={"actual.started_at": 1},
+        sort=[("actual.started_at", -1)],
+        limit=90,
+    ))
+    current_streak = 0
+    longest_streak = 0
+    if streak_rows:
+        seen_dates = set()
+        for row in streak_rows:
+            started = row.get("actual", {}).get("started_at")
+            if started:
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                seen_dates.add(started.date())
+        today = datetime.now(timezone.utc).date()
+        run = 0
+        check = today
+        while check in seen_dates:
+            run += 1
+            check -= timedelta(days=1)
+        if today not in seen_dates and (today - timedelta(days=1)) in seen_dates:
+            check = today - timedelta(days=1)
+            run = 0
+            while check in seen_dates:
+                run += 1
+                check -= timedelta(days=1)
+        current_streak = run
+        sorted_dates = sorted(seen_dates)
+        best_run = 1
+        cur_run = 1
+        for i in range(1, len(sorted_dates)):
+            if (sorted_dates[i] - sorted_dates[i - 1]).days == 1:
+                cur_run += 1
+                best_run = max(best_run, cur_run)
+            else:
+                cur_run = 1
+        longest_streak = best_run if sorted_dates else 0
+
+    # ── Mood × Track effectiveness matrix ──
+    mood_track_rows = list(db.sleep_sessions.aggregate([
+        {"$match": {**reviewed_match,
+                     "plan.mood": {"$nin": [None, ""]},
+                     "plan.soundscape_title": {"$nin": [None, ""]}}},
+        {"$group": {
+            "_id": {"mood": "$plan.mood", "track": "$plan.soundscape_title"},
+            "sessions": {"$sum": 1},
+            "avg_rating": {"$avg": "$review.rating"},
+        }},
+        {"$sort": {"avg_rating": -1, "sessions": -1}},
+        {"$limit": 10},
+    ]))
+    mood_track_matrix = [
+        {
+            "mood": row["_id"]["mood"],
+            "track": row["_id"]["track"],
+            "sessions": row["sessions"],
+            "avg_rating": _round(row["avg_rating"]),
+        }
+        for row in mood_track_rows
+    ]
+
     recent_rows = list(db.sleep_sessions.find(
         {"user_id": user_id, "status": {"$in": ["completed", "reviewed"]}},
         sort=[("created_at", -1)],
@@ -161,14 +255,18 @@ def get_user_sleep_insights(user_id: str, days: int = 30) -> dict:
         trend = "steady"
 
     if best_track:
-        summary = f"MongoDB shows {best_track['title']} is your strongest recent track"
+        summary = f"Your best track is {best_track['title']}"
         if best_track.get("avg_rating"):
-            summary += f" at {best_track['avg_rating']}/5 average"
+            summary += f" at {best_track['avg_rating']}/5"
         summary += "."
+        avg_energy = _round(stats_doc.get("avg_energy"))
+        avg_depth = _round(stats_doc.get("avg_depth"))
+        if avg_energy and avg_depth:
+            summary += f" Avg depth {avg_depth}/5, morning energy {avg_energy}/5."
     elif reviewed_sessions:
-        summary = "MongoDB has reviewed sessions, but no clear winning track yet. Keep rating sessions to improve recommendations."
+        summary = "No clear winning track yet. Keep rating sessions to sharpen recommendations."
     else:
-        summary = "MongoDB is connected; complete and review a session to build personalized recommendations."
+        summary = "Complete and review a session to build personalised recommendations."
 
     return {
         "user_id": user_id,
@@ -186,8 +284,16 @@ def get_user_sleep_insights(user_id: str, days: int = 30) -> dict:
             "reviewed_sessions": reviewed_sessions,
             "avg_rating": avg_rating,
             "avg_duration": _round(stats_doc.get("avg_duration"), 0),
+            "avg_depth": _round(stats_doc.get("avg_depth")),
+            "avg_energy": _round(stats_doc.get("avg_energy")),
+            "avg_interruptions": _round(stats_doc.get("avg_interruptions")),
         },
         "track_performance": track_performance,
         "factor_correlations": factor_correlations,
         "recent_pattern": recent_pattern,
+        "best_hour": best_hour,
+        "best_hour_rating": best_hour_rating,
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "mood_track_matrix": mood_track_matrix,
     }

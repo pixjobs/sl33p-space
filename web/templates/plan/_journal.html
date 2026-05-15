@@ -1,28 +1,16 @@
-<details class="bg-surface border border-border rounded-2xl overflow-hidden">
-  <summary class="flex items-center gap-2.5 text-[0.8rem] text-white/35 cursor-pointer py-3.5 px-5 hover:text-white/55 transition-colors">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4 opacity-40"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-    Sleep Journal
-    <span class="ml-auto flex gap-1 items-center" id="tracking-toggle">
-      <button class="tracking-opt px-2 py-0.5 bg-transparent border border-border rounded-[10px] text-white/25 text-[0.5rem] cursor-pointer transition-colors{% if tracking_level == 'minimal' %} active{% endif %}" data-level="minimal" onclick="event.stopPropagation();setTrackingLevel(this)">Min</button>
-      <button class="tracking-opt px-2 py-0.5 bg-transparent border border-border rounded-[10px] text-white/25 text-[0.5rem] cursor-pointer transition-colors{% if tracking_level == 'basic' or not tracking_level %} active{% endif %}" data-level="basic" onclick="event.stopPropagation();setTrackingLevel(this)">Basic</button>
-      <button class="tracking-opt px-2 py-0.5 bg-transparent border border-border rounded-[10px] text-white/25 text-[0.5rem] cursor-pointer transition-colors{% if tracking_level == 'detailed' %} active{% endif %}" data-level="detailed" onclick="event.stopPropagation();setTrackingLevel(this)">Full</button>
-    </span>
-  </summary>
-  <div class="px-5 pb-5">
-    <div class="flex items-center justify-between mb-3">
-      <button class="bg-transparent border-0 text-white/30 cursor-pointer text-sm px-2 py-1 hover:text-white transition-colors" onclick="navCalendar(-1)">&larr;</button>
-      <span class="text-sm font-semibold text-white" id="cal-month-label"></span>
-      <button class="bg-transparent border-0 text-white/30 cursor-pointer text-sm px-2 py-1 hover:text-white transition-colors" onclick="navCalendar(1)">&rarr;</button>
+<section class="bg-surface border border-border rounded-2xl overflow-hidden">
+  <div class="px-5 py-4">
+    <div class="flex items-center gap-2.5 mb-3">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4 text-white/40"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+      <span class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Recent Sessions</span>
+      <span class="ml-auto flex gap-1 items-center" id="tracking-toggle">
+        <button class="tracking-opt px-2 py-0.5 bg-transparent border border-border rounded-[10px] text-white/25 text-[0.5rem] cursor-pointer transition-colors{% if tracking_level == 'minimal' %} active{% endif %}" data-level="minimal" onclick="setTrackingLevel(this)">Min</button>
+        <button class="tracking-opt px-2 py-0.5 bg-transparent border border-border rounded-[10px] text-white/25 text-[0.5rem] cursor-pointer transition-colors{% if tracking_level == 'basic' or not tracking_level %} active{% endif %}" data-level="basic" onclick="setTrackingLevel(this)">Basic</button>
+        <button class="tracking-opt px-2 py-0.5 bg-transparent border border-border rounded-[10px] text-white/25 text-[0.5rem] cursor-pointer transition-colors{% if tracking_level == 'detailed' %} active{% endif %}" data-level="detailed" onclick="setTrackingLevel(this)">Full</button>
+      </span>
     </div>
-    <div class="grid grid-cols-7 gap-1 mb-3 max-w-xs mx-auto" id="cal-grid">
-      <div class="text-[0.6rem] uppercase tracking-wider text-white/30 text-center pb-1">Mo</div>
-      <div class="text-[0.6rem] uppercase tracking-wider text-white/30 text-center pb-1">Tu</div>
-      <div class="text-[0.6rem] uppercase tracking-wider text-white/30 text-center pb-1">We</div>
-      <div class="text-[0.6rem] uppercase tracking-wider text-white/30 text-center pb-1">Th</div>
-      <div class="text-[0.6rem] uppercase tracking-wider text-white/30 text-center pb-1">Fr</div>
-      <div class="text-[0.6rem] uppercase tracking-wider text-white/30 text-center pb-1">Sa</div>
-      <div class="text-[0.6rem] uppercase tracking-wider text-white/30 text-center pb-1">Su</div>
-    </div>
-    <div class="cal-detail hidden bg-surface border border-border rounded-lg p-3 text-xs" id="cal-detail"></div>
+    <ul class="recent-list" id="recent-sessions">
+      <li class="recent-loading text-xs text-white/25" style="font-style:italic">Loading sessions...</li>
+    </ul>
   </div>
-</details>
+</section>

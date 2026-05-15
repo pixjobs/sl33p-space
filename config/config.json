@@ -21,6 +21,12 @@
     "free_generations": 2,
     "subscriber_gens_per_month": 10
   },
+  "costs": {
+    "lyria_per_clip_usd": 0.07,
+    "gemini_per_request_usd": 0.001,
+    "credit_price_usd": 1.49,
+    "subscriber_price_usd": 5.99
+  },
   "mcp": {
     "servers": [
       {

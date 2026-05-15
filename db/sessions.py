@@ -17,6 +17,45 @@ VALID_TRANSITIONS = {
 STALE_HOURS = 12
 
 
+def create_manual_session(user_id: str, bed_time, wake_time, mood: str = "calm") -> str | None:
+    db = get_db()
+    if db is None:
+        return None
+    _auto_complete_stale(db, user_id)
+    now = datetime.now(timezone.utc)
+    if bed_time.tzinfo is None:
+        bed_time = bed_time.replace(tzinfo=timezone.utc)
+    if wake_time.tzinfo is None:
+        wake_time = wake_time.replace(tzinfo=timezone.utc)
+    duration = round((wake_time - bed_time).total_seconds() / 60)
+    if duration < 0:
+        duration = 0
+    doc = {
+        "user_id": user_id,
+        "status": "completed",
+        "plan": {
+            "soundscape_id": None,
+            "soundscape_title": "Manual log",
+            "soundscape_src": None,
+            "mood": mood,
+        },
+        "playlist_id": None,
+        "actual": {
+            "started_at": bed_time,
+            "ended_at": wake_time,
+            "duration_minutes": duration,
+            "track_played": None,
+            "tracks_played": 0,
+            "manual": True,
+        },
+        "review": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = db.sleep_sessions.insert_one(doc)
+    return str(result.inserted_id)
+
+
 def create_session(user_id: str, plan: dict,
                    playlist_id: str = None) -> str | None:
     db = get_db()
@@ -163,7 +202,11 @@ def get_pending_review(user_id: str) -> dict | None:
     if db is None:
         return None
     session = db.sleep_sessions.find_one(
-        {"user_id": user_id, "status": "completed"},
+        {
+            "user_id": user_id,
+            "status": "completed",
+            "actual.started_at": {"$ne": None},
+        },
         sort=[("created_at", -1)],
     )
     if session:
@@ -280,8 +323,41 @@ def update_session_factors(session_id: str, factors: list) -> bool:
     return True
 
 
+def delete_session(session_id: str, user_id: str) -> bool:
+    db = get_db()
+    if db is None:
+        return False
+    result = db.sleep_sessions.delete_one(
+        {"_id": ObjectId(session_id), "user_id": user_id}
+    )
+    return result.deleted_count > 0
+
+
+def update_session_notes(session_id: str, notes: str) -> bool:
+    db = get_db()
+    if db is None:
+        return False
+    now = datetime.now(timezone.utc)
+    oid = ObjectId(session_id)
+    session = db.sleep_sessions.find_one({"_id": oid})
+    if not session or session["status"] not in ("completed", "reviewed"):
+        return False
+    if session.get("review") is None:
+        db.sleep_sessions.update_one(
+            {"_id": oid},
+            {"$set": {"review": {"notes": notes}, "updated_at": now}},
+        )
+    else:
+        db.sleep_sessions.update_one(
+            {"_id": oid},
+            {"$set": {"review.notes": notes, "updated_at": now}},
+        )
+    return True
+
+
 def _auto_complete_stale(db, user_id: str):
     cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_HOURS)
+    now = datetime.now(timezone.utc)
     db.sleep_sessions.update_many(
         {
             "user_id": user_id,
@@ -291,6 +367,39 @@ def _auto_complete_stale(db, user_id: str):
         {"$set": {
             "status": "completed",
             "actual.ended_at": cutoff,
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": now,
         }},
     )
+    db.sleep_sessions.update_many(
+        {
+            "user_id": user_id,
+            "status": "planned",
+            "created_at": {"$lt": cutoff},
+        },
+        {"$set": {
+            "status": "skipped",
+            "updated_at": now,
+        }},
+    )
+
+
+def clear_stale_reviews(user_id: str) -> int:
+    """Skip-review all completed sessions older than 1 hour (dev cleanup)."""
+    db = get_db()
+    if db is None:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    now = datetime.now(timezone.utc)
+    result = db.sleep_sessions.update_many(
+        {
+            "user_id": user_id,
+            "status": "completed",
+            "updated_at": {"$lt": cutoff},
+        },
+        {"$set": {
+            "status": "reviewed",
+            "review": {"skipped": True, "reviewed_at": now, "auto_cleared": True},
+            "updated_at": now,
+        }},
+    )
+    return result.modified_count

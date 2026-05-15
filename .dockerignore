@@ -18,3 +18,7 @@ firebase-service-account.json
 *-firebase-adminsdk-*.json
 credentials.json
 service-account*.json
+tests/
+scripts/
+.TODO
+node_modules/

@@ -46,7 +46,7 @@ def build_playlist(mood: str, persona: str | None, user_id: str,
 
     scored = []
     for track in pool:
-        score = _score_track(track, mood, persona, history, recent_tracks)
+        score = _score_track(track, mood, persona, history, recent_tracks, user_id)
         scored.append((track, score))
 
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -85,7 +85,8 @@ def build_playlist(mood: str, persona: str | None, user_id: str,
 
 
 def _score_track(track: dict, mood: str, persona: str | None,
-                 history: dict, recent_tracks: set) -> float:
+                 history: dict, recent_tracks: set,
+                 user_id: str = "") -> float:
     mood_scores = track.get("mood_scores", {})
     base = mood_scores.get(mood, 0.3)
 
@@ -111,7 +112,10 @@ def _score_track(track: dict, mood: str, persona: str | None,
     avg = track.get("avg_rating")
     rating_bonus = ((avg - 3) * 0.05) if avg and avg > 0 else 0
 
-    return max(0, base + history_bonus + recency_penalty + persona_bonus + rating_bonus)
+    # Prefer user's own tracks
+    owner_bonus = 0.15 if user_id and track.get("generated_by") == user_id else 0
+
+    return max(0, base + history_bonus + recency_penalty + persona_bonus + rating_bonus + owner_bonus)
 
 
 def _select_arc(scored: list[tuple], count: int = 5) -> list[tuple]:

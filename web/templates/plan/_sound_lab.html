@@ -1,23 +1,225 @@
-<details class="bg-surface border border-border rounded-2xl overflow-hidden">
-  <summary class="flex items-center gap-2.5 text-[0.8rem] text-white/35 cursor-pointer py-3.5 px-5 hover:text-white/55 transition-colors">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4 opacity-40"><path d="M9 18V5l12-2v13M6 18a3 3 0 100-6 3 3 0 000 6zM18 16a3 3 0 100-6 3 3 0 000 6z"/></svg>
-    Sound Lab
-  </summary>
-  <div class="px-5 pb-5 relative">
-    <textarea class="w-full px-3.5 py-2.5 bg-black/20 border border-border rounded-lg text-white text-sm resize-y min-h-[50px] focus:outline-none focus:border-brand placeholder:text-white/30" id="lab-prompt" placeholder="Describe the sound... e.g. warm analog pads, gentle rain, deep space drone"></textarea>
-    <div class="flex gap-2 mt-2">
-      <button class="btn btn-primary" id="btn-generate" onclick="generateTrack()">Generate</button>
-      <button class="btn btn-ghost" id="btn-inspire" onclick="inspireMe()">Inspire me</button>
+<section class="lab-wizard" id="lab-wizard">
+  {# ── Step indicator ── #}
+  <div class="lab-steps">
+    <span class="lab-dot active" data-step="1">1</span>
+    <span class="lab-dot-line"></span>
+    <span class="lab-dot" data-step="2">2</span>
+    <span class="lab-dot-line"></span>
+    <span class="lab-dot" data-step="3">3</span>
+  </div>
+
+  {# ── Step 1: Theme ── #}
+  <div class="lab-panel active" id="lab-step-1">
+    <div class="lab-step-title">Choose a theme</div>
+    <div class="lab-step-sub">What atmosphere do you want to fall asleep to?</div>
+
+    {% if apod %}
+    <button class="lab-apod-card" id="lab-apod-card" onclick="labSelectTheme(this)" data-theme="cosmic"
+            data-apod-title="{{ apod.title }}" data-apod-explanation="{{ apod.explanation[:120] }}">
+      <img class="lab-apod-thumb" src="{{ apod.url }}" alt="{{ apod.title }}" loading="lazy">
+      <div class="lab-apod-info">
+        <span class="lab-apod-badge">NASA APOD</span>
+        <span class="lab-apod-title">{{ apod.title }}</span>
+      </div>
+    </button>
+    {% endif %}
+
+    <div class="lab-theme-grid">
+      <button class="lab-theme-card" onclick="labSelectTheme(this)" data-theme="cosmic">
+        <span class="lab-theme-icon">&#10024;</span>
+        <span class="lab-theme-name">Cosmic</span>
+        <span class="lab-theme-desc">Deep space, nebula drones</span>
+      </button>
+      <button class="lab-theme-card" onclick="labSelectTheme(this)" data-theme="rain">
+        <span class="lab-theme-icon">&#127783;&#65039;</span>
+        <span class="lab-theme-name">Rain</span>
+        <span class="lab-theme-desc">Rainfall, soft thunder</span>
+      </button>
+      <button class="lab-theme-card" onclick="labSelectTheme(this)" data-theme="forest">
+        <span class="lab-theme-icon">&#127795;</span>
+        <span class="lab-theme-name">Forest</span>
+        <span class="lab-theme-desc">Night woods, crickets</span>
+      </button>
+      <button class="lab-theme-card" onclick="labSelectTheme(this)" data-theme="ocean">
+        <span class="lab-theme-icon">&#127754;</span>
+        <span class="lab-theme-name">Ocean</span>
+        <span class="lab-theme-desc">Waves, underwater calm</span>
+      </button>
+      <button class="lab-theme-card" onclick="labSelectTheme(this)" data-theme="warmth">
+        <span class="lab-theme-icon">&#127926;</span>
+        <span class="lab-theme-name">Warmth</span>
+        <span class="lab-theme-desc">Vinyl, analog hum</span>
+      </button>
+      <button class="lab-theme-card" onclick="labSelectTheme(this)" data-theme="zen">
+        <span class="lab-theme-icon">&#128276;</span>
+        <span class="lab-theme-name">Zen</span>
+        <span class="lab-theme-desc">Bowls, meditation</span>
+      </button>
+      <button class="lab-theme-card" onclick="labSelectTheme(this)" data-theme="dream">
+        <span class="lab-theme-icon">&#9729;&#65039;</span>
+        <span class="lab-theme-name">Dream</span>
+        <span class="lab-theme-desc">Ethereal, floating</span>
+      </button>
+      <button class="lab-theme-card lab-theme-custom" onclick="labSelectTheme(this)" data-theme="custom">
+        <span class="lab-theme-icon">&#9998;</span>
+        <span class="lab-theme-name">Custom</span>
+        <span class="lab-theme-desc">Describe your own</span>
+      </button>
     </div>
-    <div id="suggest-grid" class="mt-2"></div>
-    <div id="preset-grid" class="mt-2">
-      {% for name, prompt in presets.items() %}
-      <button class="preset-btn" data-name="{{ name }}" data-prompt="{{ prompt }}" onclick="generateFromPreset(this.dataset.name, this.dataset.prompt)">{{ name }}</button>
-      {% endfor %}
-    </div>
-    <div class="loading-overlay" id="gen-loading">
-      <div class="spinner"></div>
-      <span>Generating...</span>
+
+    <div class="lab-custom-input hidden" id="lab-custom-input">
+      <textarea id="lab-custom-text" class="lab-custom-textarea" placeholder="Describe the sound you want..." rows="2" maxlength="200" oninput="labUpdateCharCount()"></textarea>
+      <div class="lab-char-count" id="lab-char-count">0/200</div>
+      <button class="btn btn-primary btn-sm mt-2" onclick="labNext()">Next</button>
     </div>
   </div>
-</details>
+
+  {# ── Step 2: Keywords ── #}
+  <div class="lab-panel" id="lab-step-2">
+    <div class="lab-step-title">Add keywords</div>
+    <div class="lab-step-sub">What sounds do you want to hear?</div>
+
+    <div class="lab-kw-group">
+      <div class="lab-kw-label">Instruments</div>
+      <div class="lab-kw-row">
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="pads">Pads</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="piano">Piano</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="strings">Strings</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="bells">Bells</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="guitar">Guitar</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="bowls">Bowls</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="clarinet">Clarinet</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="saxophone">Saxophone</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="cymbal">Cymbal</button>
+      </div>
+    </div>
+    <div class="lab-kw-group">
+      <div class="lab-kw-label">Textures</div>
+      <div class="lab-kw-row">
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="granular">Granular</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="tape_hiss">Tape Hiss</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="vinyl_crackle">Vinyl Crackle</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="static">Static</button>
+      </div>
+    </div>
+    <div class="lab-kw-group">
+      <div class="lab-kw-label">Nature</div>
+      <div class="lab-kw-row">
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="rain">Rain</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="wind">Wind</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="waves">Waves</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="crickets">Crickets</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="thunder">Thunder</button>
+      </div>
+    </div>
+    <div class="lab-kw-group">
+      <div class="lab-kw-label">ASMR</div>
+      <div class="lab-kw-row">
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="whisper">Whisper</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="tapping">Tapping</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="scratching">Scratching</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="brushing">Brushing</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="crackling">Crackling</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="pages">Page Turning</button>
+      </div>
+    </div>
+    <div class="lab-kw-group">
+      <div class="lab-kw-label">Character</div>
+      <div class="lab-kw-row">
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="minimal">Minimal</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="layered">Layered</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="spacious">Spacious</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="warm">Warm</button>
+        <button class="lab-kw-pill" onclick="labToggleKeyword(this)" data-keyword="cold">Cold</button>
+      </div>
+    </div>
+
+    <div class="flex gap-2 mt-3">
+      <button class="btn btn-ghost" onclick="labBack()">Back</button>
+      <button class="btn btn-primary" onclick="labNext()">Next</button>
+    </div>
+  </div>
+
+  {# ── Step 3: Colour ── #}
+  <div class="lab-panel" id="lab-step-3">
+    <div class="lab-step-title">Choose a colour</div>
+    <div class="lab-step-sub">Each colour shapes the sonic character</div>
+
+    <div class="lab-colour-grid">
+      <button class="lab-colour-swatch" onclick="labSelectColour(this)" data-colour="indigo">
+        <span class="lab-colour-circle" style="background: #6366f1;"></span>
+        <span class="lab-colour-name">Indigo</span>
+        <span class="lab-colour-desc">Deep, cosmic</span>
+      </button>
+      <button class="lab-colour-swatch" onclick="labSelectColour(this)" data-colour="blue">
+        <span class="lab-colour-circle" style="background: #60a5fa;"></span>
+        <span class="lab-colour-name">Blue</span>
+        <span class="lab-colour-desc">Cool, calm</span>
+      </button>
+      <button class="lab-colour-swatch" onclick="labSelectColour(this)" data-colour="teal">
+        <span class="lab-colour-circle" style="background: #2dd4bf;"></span>
+        <span class="lab-colour-name">Teal</span>
+        <span class="lab-colour-desc">Fluid, flowing</span>
+      </button>
+      <button class="lab-colour-swatch" onclick="labSelectColour(this)" data-colour="green">
+        <span class="lab-colour-circle" style="background: #4ade80;"></span>
+        <span class="lab-colour-name">Green</span>
+        <span class="lab-colour-desc">Organic, earthy</span>
+      </button>
+      <button class="lab-colour-swatch" onclick="labSelectColour(this)" data-colour="rose">
+        <span class="lab-colour-circle" style="background: #fb7185;"></span>
+        <span class="lab-colour-name">Rose</span>
+        <span class="lab-colour-desc">Soft, dreamy</span>
+      </button>
+      <button class="lab-colour-swatch" onclick="labSelectColour(this)" data-colour="amber">
+        <span class="lab-colour-circle" style="background: #fbbf24;"></span>
+        <span class="lab-colour-name">Amber</span>
+        <span class="lab-colour-desc">Analog, vintage</span>
+      </button>
+      <button class="lab-colour-swatch" onclick="labSelectColour(this)" data-colour="violet">
+        <span class="lab-colour-circle" style="background: #a78bfa;"></span>
+        <span class="lab-colour-name">Violet</span>
+        <span class="lab-colour-desc">Ethereal, mystical</span>
+      </button>
+      <button class="lab-colour-swatch" onclick="labSelectColour(this)" data-colour="silver">
+        <span class="lab-colour-circle" style="background: #cbd5e1;"></span>
+        <span class="lab-colour-name">Silver</span>
+        <span class="lab-colour-desc">Pure, minimal</span>
+      </button>
+    </div>
+
+    <div class="lab-preview-prompt hidden" id="lab-preview-prompt"></div>
+
+    <div class="lab-waveform" id="lab-waveform">
+      <svg viewBox="0 0 200 40" preserveAspectRatio="none" class="lab-wave-svg">
+        <path class="lab-wave-path" d="M0,20 Q10,10 20,20 Q30,30 40,20 Q50,10 60,20 Q70,30 80,20 Q90,10 100,20 Q110,30 120,20 Q130,10 140,20 Q150,30 160,20 Q170,10 180,20 Q190,30 200,20" fill="none" stroke="url(#waveGrad)" stroke-width="2"/>
+        <defs>
+          <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#c4b5fd"/>
+            <stop offset="50%" stop-color="#f9a8d4"/>
+            <stop offset="100%" stop-color="#93c5fd"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+
+    <div class="lab-result hidden" id="lab-result">
+      <div class="lab-result-title" id="lab-result-title"></div>
+      <audio id="lab-result-audio" controls class="lab-result-player"></audio>
+      <div class="flex gap-2 mt-2">
+        <button class="btn btn-primary btn-sm" onclick="labUseTonight()">Use Tonight</button>
+        <button class="btn btn-ghost btn-sm" onclick="showToast('Saved to library', 'success')">Save to Library</button>
+      </div>
+    </div>
+
+    <div class="flex gap-2 mt-3" id="lab-gen-buttons">
+      <button class="btn btn-ghost" onclick="labBack()">Back</button>
+      <button class="btn btn-primary lab-gen-btn" id="lab-gen-btn" onclick="labGenerate()">Generate</button>
+    </div>
+
+    <div class="lab-generating hidden" id="lab-generating">
+      <div class="spinner"></div>
+      <span>Creating your soundscape...</span>
+    </div>
+  </div>
+</section>

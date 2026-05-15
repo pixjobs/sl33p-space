@@ -1,0 +1,21 @@
+{% if pending_gifts %}
+<section id="gift-banner" class="bg-surface border border-violet-500/20 rounded-2xl overflow-hidden mb-3">
+  <div class="px-5 py-4">
+    <div class="flex items-center gap-2 mb-1">
+      <span class="text-violet-400 text-sm">&#127873;</span>
+      <p class="text-sm font-medium text-white/80">
+        {% set total_amount = pending_gifts | sum(attribute='amount') %}
+        {% if pending_gifts | length == 1 %}
+          {{ pending_gifts[0].from_name }} gifted you {{ total_amount }} credit{{ 's' if total_amount != 1 else '' }}!
+        {% else %}
+          You received {{ total_amount }} credits from {{ pending_gifts | length }} gifts!
+        {% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-3 mt-2">
+      <span class="text-xs text-white/30">Your updated balance is reflected above.</span>
+      <button class="text-xs text-violet-400/60 hover:text-violet-400 bg-transparent border-0 cursor-pointer transition-colors" onclick="dismissGiftBanner()">Dismiss</button>
+    </div>
+  </div>
+</section>
+{% endif %}

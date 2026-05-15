@@ -1,43 +1,24 @@
 """
-Tier, credit, and subscription management for sl33p-space.
+Tier and credit management for sl33p-space.
 
 Tier types:
-  - free: 2 generations total, basic streaming
-  - trial: 7 days full access (auto-set on first login)
-  - subscriber: unlimited streaming + N generations/month
+  - free: 2 generations/month, full streaming
   - admin: unlimited everything
+  - Credits: per-generation top-up (monetisation placeholder)
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from db import get_db
 
 
-DEFAULT_TIER = {
-    "type": "trial",
-    "trial_started_at": None,
-    "trial_ends_at": None,
-    "generations_per_month": 2,
-    "generations_this_month": 0,
-    "generation_month": None,
-}
-
-DEFAULT_CREDITS = {
-    "balance": 0,
-    "total_purchased": 0,
-    "total_spent": 0,
-}
-
 TIER_LIMITS = {
-    "free": {"generations_per_month": 2, "can_stream": True},
-    "trial": {"generations_per_month": 10, "can_stream": True},
-    "subscriber": {"generations_per_month": 10, "can_stream": True},
-    "admin": {"generations_per_month": 999, "can_stream": True},
+    "free": {"generations_per_month": 2},
+    "admin": {"generations_per_month": 999},
 }
 
 
 def get_user_tier(uid: str) -> dict:
-    """Get full tier info for a user."""
     db = get_db()
     if db is None:
         return _default_tier_info()
@@ -46,29 +27,21 @@ def get_user_tier(uid: str) -> dict:
     if not user:
         return _default_tier_info()
 
-    tier = user.get("tier", dict(DEFAULT_TIER))
-    credits = user.get("credits", dict(DEFAULT_CREDITS))
-
+    tier = user.get("tier", {})
+    credits = user.get("credits", {"balance": 0})
     tier_type = tier.get("type", "free")
-    now = datetime.now(timezone.utc)
 
-    # Check if trial is still active
-    trial_active = False
-    trial_days_remaining = 0
+    # Migrate legacy trial users to free
     if tier_type == "trial":
-        ends = tier.get("trial_ends_at")
-        if ends:
-            if ends.tzinfo is None:
-                ends = ends.replace(tzinfo=timezone.utc)
-            if now < ends:
-                trial_active = True
-                trial_days_remaining = max(0, (ends - now).days)
-            else:
-                tier_type = "free"
-                db.users.update_one(
-                    {"_id": uid},
-                    {"$set": {"tier.type": "free"}},
-                )
+        tier_type = "free"
+        db.users.update_one({"_id": uid}, {"$set": {"tier.type": "free"}})
+
+    # Migrate legacy subscriber users to free (no billing yet)
+    if tier_type == "subscriber":
+        tier_type = "free"
+        db.users.update_one({"_id": uid}, {"$set": {"tier.type": "free"}})
+
+    now = datetime.now(timezone.utc)
 
     # Reset monthly counter if month changed
     current_month = now.strftime("%Y-%m")
@@ -81,30 +54,25 @@ def get_user_tier(uid: str) -> dict:
             }},
         )
         tier["generations_this_month"] = 0
-        tier["generation_month"] = current_month
 
     limits = TIER_LIMITS.get(tier_type, TIER_LIMITS["free"])
-    gens_remaining = limits["generations_per_month"] - tier.get("generations_this_month", 0)
+    gens_used = tier.get("generations_this_month", 0)
+    gens_remaining = max(0, limits["generations_per_month"] - gens_used)
+    credit_balance = credits.get("balance", 0)
 
     can_generate = (
         tier_type == "admin"
-        or (trial_active and gens_remaining > 0)
-        or (tier_type == "subscriber" and gens_remaining > 0)
-        or credits.get("balance", 0) > 0
-        or (tier_type == "free" and gens_remaining > 0)
+        or gens_remaining > 0
+        or credit_balance > 0
     )
 
     return {
         "type": tier_type,
-        "trial_active": trial_active,
-        "trial_days_remaining": trial_days_remaining,
         "generations_per_month": limits["generations_per_month"],
-        "generations_this_month": tier.get("generations_this_month", 0),
-        "generations_remaining": max(0, gens_remaining),
+        "generations_this_month": gens_used,
+        "generations_remaining": gens_remaining,
         "can_generate": can_generate,
-        "can_stream": limits["can_stream"],
-        "credits_balance": credits.get("balance", 0),
-        "owned_packs": user.get("owned_pack_ids", []),
+        "credits_balance": credit_balance,
         "is_admin": tier_type == "admin",
     }
 
@@ -112,48 +80,31 @@ def get_user_tier(uid: str) -> dict:
 def _default_tier_info() -> dict:
     return {
         "type": "free",
-        "trial_active": False,
-        "trial_days_remaining": 0,
         "generations_per_month": 2,
         "generations_this_month": 0,
         "generations_remaining": 2,
         "can_generate": True,
-        "can_stream": True,
         "credits_balance": 0,
-        "owned_packs": [],
         "is_admin": False,
     }
 
 
 def check_generation_allowance(uid: str) -> tuple[bool, str]:
-    """Check if user can generate. Returns (allowed, reason)."""
     tier = get_user_tier(uid)
 
     if tier["is_admin"]:
         return True, "admin"
 
-    if tier["trial_active"] and tier["generations_remaining"] > 0:
-        return True, "trial"
-
-    if tier["type"] == "subscriber" and tier["generations_remaining"] > 0:
-        return True, "subscription"
+    if tier["generations_remaining"] > 0:
+        return True, "free_tier"
 
     if tier["credits_balance"] > 0:
         return True, "credits"
 
-    if tier["type"] == "free" and tier["generations_remaining"] > 0:
-        return True, "free_tier"
-
-    if tier["trial_active"]:
-        return False, "Monthly generation limit reached during trial."
-    if tier["type"] == "subscriber":
-        return False, "Monthly generation limit reached. Use credits for additional generations."
-
-    return False, "Free generations used. Purchase credits or subscribe for more."
+    return False, "Free generations used. Purchase credits for more."
 
 
 def consume_generation(uid: str, source: str = "tier") -> bool:
-    """Deduct a generation from the user's allowance."""
     db = get_db()
     if db is None:
         return False
@@ -166,7 +117,7 @@ def consume_generation(uid: str, source: str = "tier") -> bool:
     if tier.get("type") == "admin":
         return True
 
-    # Try tier allocation first
+    # Try free tier allocation first
     if source != "credits":
         limits = TIER_LIMITS.get(tier.get("type", "free"), TIER_LIMITS["free"])
         if tier.get("generations_this_month", 0) < limits["generations_per_month"]:
@@ -181,9 +132,7 @@ def consume_generation(uid: str, source: str = "tier") -> bool:
     if credits.get("balance", 0) > 0:
         db.users.update_one(
             {"_id": uid},
-            {
-                "$inc": {"credits.balance": -1, "credits.total_spent": 1},
-            },
+            {"$inc": {"credits.balance": -1, "credits.total_spent": 1}},
         )
         return True
 
@@ -191,7 +140,6 @@ def consume_generation(uid: str, source: str = "tier") -> bool:
 
 
 def add_credits(uid: str, amount: int, source: str = "purchase") -> int:
-    """Add credits to a user's balance. Returns new balance."""
     db = get_db()
     if db is None:
         return 0
@@ -210,43 +158,151 @@ def add_credits(uid: str, amount: int, source: str = "purchase") -> int:
     return user.get("credits", {}).get("balance", 0) if user else 0
 
 
-def start_trial(uid: str) -> bool:
-    """Start a 7-day trial for a user."""
+def gift_credits(from_uid: str, to_uid: str, amount: int,
+                 from_name: str = "") -> int:
+    db = get_db()
+    if db is None:
+        return 0
+
+    new_balance = add_credits(to_uid, amount, source="gift")
+
+    db.credit_gifts.insert_one({
+        "from_uid": from_uid,
+        "to_uid": to_uid,
+        "from_name": from_name,
+        "amount": amount,
+        "source": "admin",
+        "seen": False,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    return new_balance
+
+
+def get_pending_gifts(uid: str) -> list[dict]:
+    db = get_db()
+    if db is None:
+        return []
+    cursor = db.credit_gifts.find(
+        {"to_uid": uid, "seen": False},
+        sort=[("created_at", -1)],
+    )
+    results = []
+    for doc in cursor:
+        results.append({
+            "from_name": doc.get("from_name", "Someone"),
+            "amount": doc.get("amount", 0),
+            "source": doc.get("source", "admin"),
+        })
+    return results
+
+
+def mark_gifts_seen(uid: str) -> bool:
     db = get_db()
     if db is None:
         return False
-
-    now = datetime.now(timezone.utc)
-    db.users.update_one(
-        {"_id": uid},
-        {"$set": {
-            "tier.type": "trial",
-            "tier.trial_started_at": now,
-            "tier.trial_ends_at": now + timedelta(days=7),
-            "tier.generations_per_month": TIER_LIMITS["trial"]["generations_per_month"],
-            "updated_at": now,
-        }},
+    db.credit_gifts.update_many(
+        {"to_uid": uid, "seen": False},
+        {"$set": {"seen": True}},
     )
     return True
 
 
-def set_subscription(uid: str, period: str = "monthly") -> bool:
+MAX_REFERRAL_CREDITS = 5
+
+
+def get_referral_code(uid: str) -> str | None:
     db = get_db()
     if db is None:
-        return False
+        return None
+    user = db.users.find_one({"_id": uid})
+    if not user:
+        return None
+    code = user.get("referral_code")
+    if not code:
+        import hashlib
+        code = hashlib.sha256(uid.encode()).hexdigest()[:8]
+        db.users.update_one({"_id": uid}, {"$set": {"referral_code": code}})
+    return code
+
+
+def get_referral_stats(uid: str) -> dict:
+    db = get_db()
+    if db is None:
+        return {"code": None, "referrals_given": 0, "credits_earned": 0}
+    user = db.users.find_one({"_id": uid})
+    if not user:
+        return {"code": None, "referrals_given": 0, "credits_earned": 0}
+    return {
+        "code": user.get("referral_code"),
+        "referrals_given": user.get("referrals_given", 0),
+        "credits_earned": user.get("referrals_given", 0),
+        "max_referrals": MAX_REFERRAL_CREDITS,
+    }
+
+
+def redeem_referral(code: str, new_uid: str) -> tuple[bool, str]:
+    db = get_db()
+    if db is None:
+        return False, "Database unavailable"
+
+    referrer = db.users.find_one({"referral_code": code})
+    if not referrer:
+        return False, "Invalid referral code"
+
+    referrer_uid = referrer["_id"]
+
+    if referrer_uid == new_uid:
+        return False, "Cannot use your own referral code"
+
+    new_user = db.users.find_one({"_id": new_uid})
+    if not new_user:
+        return False, "User not found"
+
+    if new_user.get("referred_by"):
+        return False, "Already redeemed a referral"
+
+    if referrer.get("referrals_given", 0) >= MAX_REFERRAL_CREDITS:
+        return False, "Referrer has reached the referral limit"
 
     now = datetime.now(timezone.utc)
+    referrer_name = referrer.get("display_name", "").split()[0] or "A friend"
+    new_user_name = new_user.get("display_name", "").split()[0] or "A friend"
+
+    add_credits(referrer_uid, 1, source="referral")
+    add_credits(new_uid, 1, source="referral")
+
     db.users.update_one(
-        {"_id": uid},
-        {"$set": {
-            "tier.type": "subscriber",
-            "tier.subscription_started_at": now,
-            "tier.subscription_period": period,
-            "tier.generations_per_month": TIER_LIMITS["subscriber"]["generations_per_month"],
-            "updated_at": now,
-        }},
+        {"_id": new_uid},
+        {"$set": {"referred_by": referrer_uid, "updated_at": now}},
     )
-    return True
+    db.users.update_one(
+        {"_id": referrer_uid},
+        {"$inc": {"referrals_given": 1}, "$set": {"updated_at": now}},
+    )
+
+    db.credit_gifts.insert_many([
+        {
+            "from_uid": referrer_uid,
+            "to_uid": new_uid,
+            "from_name": referrer_name,
+            "amount": 1,
+            "source": "referral",
+            "seen": False,
+            "created_at": now,
+        },
+        {
+            "from_uid": new_uid,
+            "to_uid": referrer_uid,
+            "from_name": new_user_name,
+            "amount": 1,
+            "source": "referral",
+            "seen": False,
+            "created_at": now,
+        },
+    ])
+
+    return True, "ok"
 
 
 def set_admin(uid: str) -> bool:
@@ -254,13 +310,12 @@ def set_admin(uid: str) -> bool:
     if db is None:
         return False
 
-    now = datetime.now(timezone.utc)
     db.users.update_one(
         {"_id": uid},
         {"$set": {
             "tier.type": "admin",
             "tier.generations_per_month": TIER_LIMITS["admin"]["generations_per_month"],
-            "updated_at": now,
+            "updated_at": datetime.now(timezone.utc),
         }},
     )
     return True
