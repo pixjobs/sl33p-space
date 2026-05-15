@@ -474,6 +474,19 @@ summary { list-style: none; }
 .onboarding-step-desc { font-size: 0.65rem; color: rgba(255,255,255,0.3); margin-top: 1px; }
 
 /* ── Sound Lab Wizard ── */
+.lab-create-btn {
+  width: 100%; display: flex; align-items: center; justify-content: center;
+  gap: 0.5rem; padding: 0.75rem; border-radius: 0.75rem;
+  background: rgba(124,92,252,0.06); border: 1px dashed rgba(124,92,252,0.25);
+  color: rgba(196,181,253,0.6); font-family: inherit; font-size: 0.75rem;
+  font-weight: 500; cursor: pointer; transition: 0.2s;
+}
+.lab-create-btn:hover {
+  background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.4);
+  color: #c4b5fd;
+}
+.lab-create-btn.hidden { display: none; }
+
 .lab-wizard {
   background: rgba(255,255,255,0.03);
   border: 1px solid rgba(255,255,255,0.06);
@@ -481,6 +494,7 @@ summary { list-style: none; }
   padding: 1.25rem;
   position: relative;
 }
+.lab-wizard.hidden { display: none; }
 
 .lab-steps {
   display: flex; align-items: center; justify-content: center;

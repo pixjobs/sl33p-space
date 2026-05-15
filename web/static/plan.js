@@ -760,6 +760,15 @@ function labUpdateCharCount() {
   if (txt && counter) counter.textContent = txt.value.length + '/500';
 }
 
+function toggleLabWizard() {
+  var wizard = document.getElementById('lab-wizard');
+  var btn = document.getElementById('lab-create-btn');
+  if (!wizard) return;
+  var show = wizard.classList.contains('hidden');
+  wizard.classList.toggle('hidden', !show);
+  if (btn) btn.classList.toggle('hidden', show);
+}
+
 function labSelectTheme(el) {
   document.querySelectorAll('.lab-theme-card, .lab-apod-card').forEach(function(c) { c.classList.remove('active'); });
   el.classList.add('active');
