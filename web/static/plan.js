@@ -826,25 +826,60 @@ async function labGenerate() {
     var res = await api('/api/music/generate', 'POST', { prompt: prompt, title: title });
     if (res.error) {
       showToast(res.error, 'error');
-      if (genBtns) genBtns.classList.remove('hidden');
-    } else {
-      showToast('Track created: ' + (res.title || title), 'success');
-      if (result) {
-        var resultTitle = document.getElementById('lab-result-title');
-        var resultAudio = document.getElementById('lab-result-audio');
-        if (resultTitle) resultTitle.textContent = res.title || title;
-        if (resultAudio && res.src) { resultAudio.src = res.src; }
-        result.classList.remove('hidden');
-      }
-      await _refreshTrackList();
+      _labResetGenUI(genBtns, generating, waveform);
+      return;
     }
+    if (res.job_id) {
+      showToast('Generating your track — this takes about a minute...', 'info', 15000);
+      _labPollJob(res.job_id, genBtns, generating, waveform, result);
+      return;
+    }
+    _labShowResult(res, result);
+    _labResetGenUI(genBtns, generating, waveform);
+    await _refreshTrackList();
   } catch (e) {
     showToast('Generation failed: ' + e.message, 'error');
-    if (genBtns) genBtns.classList.remove('hidden');
-  } finally {
-    if (generating) generating.classList.add('hidden');
-    if (waveform) waveform.classList.remove('generating');
+    _labResetGenUI(genBtns, generating, waveform);
   }
+}
+
+function _labResetGenUI(genBtns, generating, waveform) {
+  if (genBtns) genBtns.classList.remove('hidden');
+  if (generating) generating.classList.add('hidden');
+  if (waveform) waveform.classList.remove('generating');
+}
+
+function _labShowResult(res, resultEl) {
+  showToast('Track created: ' + (res.title || 'New track'), 'success');
+  if (resultEl) {
+    var resultTitle = document.getElementById('lab-result-title');
+    var resultAudio = document.getElementById('lab-result-audio');
+    if (resultTitle) resultTitle.textContent = res.title || '';
+    if (resultAudio && res.src) { resultAudio.src = res.src; }
+    resultEl.classList.remove('hidden');
+  }
+}
+
+async function _labPollJob(jobId, genBtns, generating, waveform, resultEl) {
+  for (var i = 0; i < 60; i++) {
+    await new Promise(function(r) { setTimeout(r, 5000); });
+    try {
+      var job = await api('/api/music/job/' + jobId);
+      if (job.status === 'complete') {
+        _labShowResult(job.result || {}, resultEl);
+        _labResetGenUI(genBtns, generating, waveform);
+        await _refreshTrackList();
+        return;
+      }
+      if (job.status === 'failed') {
+        showToast((job.result || {}).error || 'Generation failed', 'error');
+        _labResetGenUI(genBtns, generating, waveform);
+        return;
+      }
+    } catch (e) { /* keep polling */ }
+  }
+  showToast('Generation is taking longer than expected. Check your library later.', 'info');
+  _labResetGenUI(genBtns, generating, waveform);
 }
 
 function labUseTonight() {

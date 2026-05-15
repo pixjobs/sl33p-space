@@ -535,15 +535,44 @@ async function generateMusic(prompt, title) {
     var res = await api('/api/music/generate', 'POST', { prompt: prompt, title: title });
     if (res.error) {
       showToast(res.error, 'error');
-    } else {
-      showToast('Track generated: ' + (res.title || 'New track'), 'success');
-      await _refreshTrackList();
+      if (overlay) overlay.classList.remove('active');
+      return;
     }
+    if (res.job_id) {
+      showToast('Generating your track — this takes about a minute...', 'info', 15000);
+      _pollJob(res.job_id, overlay);
+      return;
+    }
+    showToast('Track ready: ' + (res.title || 'New track'), 'success');
+    await _refreshTrackList();
+    if (overlay) overlay.classList.remove('active');
   } catch (e) {
     showToast('Generation failed: ' + e.message, 'error');
-  } finally {
     if (overlay) overlay.classList.remove('active');
   }
+}
+
+async function _pollJob(jobId, overlay) {
+  for (var i = 0; i < 60; i++) {
+    await new Promise(function(r) { setTimeout(r, 5000); });
+    try {
+      var job = await api('/api/music/job/' + jobId);
+      if (job.status === 'complete') {
+        var t = (job.result || {}).title || 'New track';
+        showToast('Track created: ' + t, 'success');
+        await _refreshTrackList();
+        if (overlay) overlay.classList.remove('active');
+        return;
+      }
+      if (job.status === 'failed') {
+        showToast((job.result || {}).error || 'Generation failed', 'error');
+        if (overlay) overlay.classList.remove('active');
+        return;
+      }
+    } catch (e) { /* keep polling */ }
+  }
+  showToast('Generation is taking longer than expected. Check your library later.', 'info');
+  if (overlay) overlay.classList.remove('active');
 }
 
 function generateFromPreset(name, prompt) {

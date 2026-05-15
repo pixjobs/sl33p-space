@@ -261,6 +261,34 @@ def _blend_with_preset(raw: str) -> str:
     return f"{raw}. Variation on {preset_name}: {preset_prompt}"
 
 
+def check_music_cache(prompt: str) -> dict | None:
+    """Return cached track data if this prompt was already generated, else None."""
+    prompt = _sanitize_prompt(prompt)[:500]
+    enriched = _enrich_prompt(prompt)
+    full_prompt = f"{enriched}\n\n{SLEEP_STYLE}"
+    key = _cache_key(full_prompt)
+    existing = get_track(key)
+    if existing:
+        src = existing.get("gcs_url") or (
+            "/media/music/" + os.path.basename(existing["local_path"])
+            if existing.get("local_path") else ""
+        )
+        return {
+            "path": existing.get("local_path", ""),
+            "prompt": existing.get("prompt", prompt),
+            "title": existing.get("title", ""),
+            "model": existing.get("model", ""),
+            "description": existing.get("description", ""),
+            "format": existing.get("format", "ogg/opus"),
+            "size_kb": existing.get("size_kb", 0),
+            "src": src,
+            "gcs_url": existing.get("gcs_url"),
+            "mood_tags": existing.get("mood_tags", []),
+            "cached": True,
+        }
+    return None
+
+
 def generate_music(prompt: str, title: str = "",
                    model: str = "", user_id: str = "default") -> dict:
     """Generate music from a text prompt. Returns cached version if available."""

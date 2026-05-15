@@ -206,6 +206,53 @@ def update_track_stats(track_id: str, rating: int) -> bool:
     return True
 
 
+def create_generation_job(user_id: str, prompt: str, title: str = "") -> str | None:
+    db = get_db()
+    if db is None:
+        return None
+    result = db.generation_jobs.insert_one({
+        "user_id": user_id,
+        "prompt": prompt,
+        "title": title,
+        "status": "pending",
+        "result": None,
+        "created_at": datetime.now(timezone.utc),
+    })
+    return str(result.inserted_id)
+
+
+def get_generation_job(job_id: str) -> dict | None:
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        doc = db.generation_jobs.find_one({"_id": ObjectId(job_id)})
+    except Exception:
+        return None
+    if not doc:
+        return None
+    doc["_id"] = str(doc["_id"])
+    for k in ("created_at", "completed_at"):
+        if k in doc and doc[k]:
+            doc[k] = doc[k].isoformat()
+    return doc
+
+
+def update_generation_job(job_id: str, status: str, result: dict = None):
+    db = get_db()
+    if db is None:
+        return
+    update = {"status": status}
+    if result is not None:
+        update["result"] = result
+    if status in ("complete", "failed"):
+        update["completed_at"] = datetime.now(timezone.utc)
+    db.generation_jobs.update_one(
+        {"_id": ObjectId(job_id)},
+        {"$set": update},
+    )
+
+
 def resolve_track_url(track: dict) -> str:
     if track.get("gcs_url"):
         return track["gcs_url"]

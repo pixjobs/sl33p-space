@@ -72,7 +72,7 @@ gcloud run deploy "${SERVICE}" \
   --min-instances=0 \
   --max-instances=3 \
   --timeout=300 \
-  --update-env-vars="FIREBASE_PROJECT_ID=${PROJECT},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${PROJECT}.firebaseapp.com,FIREBASE_APP_ID=${FIREBASE_APP_ID},GCS_BUCKET=${GCS_BUCKET:-sl33p-space-music}" \
+  --update-env-vars="FIREBASE_PROJECT_ID=${PROJECT},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${PROJECT}.firebaseapp.com,FIREBASE_APP_ID=${FIREBASE_APP_ID},GCS_BUCKET=${GCS_BUCKET:-sl33p-space-music},SERVICE_URL=https://sl33p-space-lqs3sot4na-ew.a.run.app" \
   --update-secrets="GOOGLE_API_KEY=google-api-key:latest,MONGODB_URI=mongodb-uri:latest,FLASK_SECRET_KEY=flask-secret-key:latest,/tmp/sl33p-mongo-cert.pem=mongodb-cert:latest"
 
 # ── 4. Show URL ──

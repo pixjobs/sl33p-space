@@ -44,6 +44,35 @@ def _load_config() -> dict:
         return {}
 
 
+def _enqueue_music_task(job_id: str):
+    """Enqueue a music generation job to Cloud Tasks."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        from google.cloud import tasks_v2
+        client = tasks_v2.CloudTasksClient()
+        parent = client.queue_path("sl33p-space", "europe-west1", "sleep-music-queue")
+        svc_url = os.environ.get("SERVICE_URL",
+                                 "https://sl33p-space-lqs3sot4na-ew.a.run.app")
+        task = {
+            "http_request": {
+                "http_method": tasks_v2.HttpMethod.POST,
+                "url": f"{svc_url}/api/internal/music/generate",
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"job_id": job_id}).encode(),
+                "oidc_token": {
+                    "service_account_email": "309279270861-compute@developer.gserviceaccount.com",
+                    "audience": svc_url,
+                },
+            },
+        }
+        client.create_task(parent=parent, task=task)
+    except Exception as e:
+        log.error("Failed to enqueue music task: %s", e)
+        from db.tracks import update_generation_job
+        update_generation_job(job_id, "failed", {"error": "Failed to queue generation"})
+
+
 def create_app(agent_runner=None):
     global _agent_runner
     _agent_runner = agent_runner
@@ -236,7 +265,7 @@ def create_app(agent_runner=None):
     @require_login
     @rate_limit(max_calls=5, window_seconds=3600)
     def api_music_generate():
-        from audio.music_gen import generate_music
+        from audio.music_gen import check_music_cache
         from db.tiers import check_generation_allowance, consume_generation
         uid = get_user_id()
 
@@ -247,15 +276,52 @@ def create_app(agent_runner=None):
         data = request.get_json(force=True)
         prompt = data.get("prompt", "ambient sleep music")
         title = data.get("title", "")
-        result = generate_music(prompt, title=title, user_id=uid)
 
-        if "error" in result:
-            return jsonify(result), 500
+        cached = check_music_cache(prompt)
+        if cached:
+            return jsonify(cached)
 
-        if not result.get("cached"):
-            consume_generation(uid)
+        from db.tracks import create_generation_job
+        job_id = create_generation_job(uid, prompt, title)
+        if not job_id:
+            return jsonify({"error": "Could not create generation job"}), 500
 
-        return jsonify(result)
+        consume_generation(uid)
+        _enqueue_music_task(job_id)
+        return jsonify({"job_id": job_id, "status": "pending"}), 202
+
+    @app.route("/api/music/job/<job_id>")
+    @require_auth
+    def api_music_job(job_id):
+        from db.tracks import get_generation_job
+        job = get_generation_job(job_id)
+        if not job:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(job)
+
+    @app.route("/api/internal/music/generate", methods=["POST"])
+    def api_internal_music_generate():
+        if not request.headers.get("X-CloudTasks-QueueName"):
+            return "", 403
+        from audio.music_gen import generate_music
+        from db.tracks import get_generation_job, update_generation_job
+        data = request.get_json(force=True)
+        job_id = data.get("job_id")
+        job = get_generation_job(job_id)
+        if not job:
+            return "", 404
+        try:
+            update_generation_job(job_id, "processing")
+            result = generate_music(job["prompt"], title=job.get("title", ""),
+                                    user_id=job["user_id"])
+            if "error" in result:
+                update_generation_job(job_id, "failed", result)
+            else:
+                update_generation_job(job_id, "complete", result)
+        except Exception as e:
+            update_generation_job(job_id, "failed", {"error": str(e)})
+            return "", 500
+        return "", 200
 
     @app.route("/api/music/library")
     @require_auth
