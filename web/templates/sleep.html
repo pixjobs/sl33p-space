@@ -461,12 +461,14 @@ var _needsGesture = false;
     if (!_imm.sessionStart) _imm.sessionStart = new Date();
     _hideOverlay();
     _updateMediaSession();
+    _updatePositionState();
     _savePlaybackState();
-    startAudioKeepAlive();
-    resumeKeepAlive();
   });
 
-  audio.addEventListener('pause', function() { updatePlayIcon(true); });
+  audio.addEventListener('pause', function() {
+    updatePlayIcon(true);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  });
 
   audio.addEventListener('error', function() {
     var code = audio.error ? audio.error.code : '?';
@@ -639,9 +641,6 @@ function _hideOverlay() {
 
 // Global gesture handler — captures first touch/click to unlock audio
 function _onFirstGesture() {
-  // Always start keep-alive on first gesture (iOS requires user gesture for AudioContext)
-  startAudioKeepAlive();
-  resumeKeepAlive();
   if (!_needsGesture) return;
   console.log('[audio] gesture captured, starting playback');
   _needsGesture = false;
@@ -692,11 +691,31 @@ function _updateMediaSession() {
   } else if (_imm.trackTitle) {
     title = _imm.trackTitle;
   }
-  navigator.mediaSession.metadata = new MediaMetadata({ title: title, artist: artist, album: 'sl33p-space' });
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: title, artist: artist, album: 'sl33p-space',
+    artwork: [{ src: '/static/logo.jpg', sizes: '512x512', type: 'image/jpeg' }]
+  });
   navigator.mediaSession.setActionHandler('play', function() { immTogglePlay(); });
   navigator.mediaSession.setActionHandler('pause', function() { immTogglePlay(); });
   navigator.mediaSession.setActionHandler('previoustrack', function() { immSkipPrev(); });
   navigator.mediaSession.setActionHandler('nexttrack', function() { immSkipNext(); });
+  try { navigator.mediaSession.setActionHandler('seekbackward', function() {}); } catch(e) {}
+  try { navigator.mediaSession.setActionHandler('seekforward', function() {}); } catch(e) {}
+  var audio = document.getElementById('imm-audio');
+  navigator.mediaSession.playbackState = (audio && !audio.paused) ? 'playing' : 'paused';
+}
+
+function _updatePositionState() {
+  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+  var audio = document.getElementById('imm-audio');
+  if (!audio || !audio.duration || !isFinite(audio.duration)) return;
+  try {
+    navigator.mediaSession.setPositionState({
+      duration: audio.duration,
+      playbackRate: audio.playbackRate || 1,
+      position: Math.min(audio.currentTime, audio.duration)
+    });
+  } catch(e) {}
 }
 
 function immSkipNext() {
@@ -1179,56 +1198,61 @@ function releaseWakeLock() {
   }
 }
 
-// Re-acquire wake lock when page becomes visible again (after screen unlock)
+// Background/foreground transitions
 document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible') {
-    var audio = document.getElementById('imm-audio');
-    if (audio && !audio.paused) requestWakeLock();
-    // iOS Safari may have suspended audio — nudge it back
-    resumeKeepAlive();
-    if (audio && audio.paused && _imm.started && !_imm._maxCutoffTriggered) {
-      audio.play().catch(function() {});
-    }
+  if (document.visibilityState === 'hidden') {
+    _enterBackgroundLoop();
+  } else {
+    _exitBackgroundLoop();
+    requestWakeLock();
+    _updateMediaSession();
+    _updatePositionState();
   }
 });
 
-// ───── iOS Audio Keep-Alive ─────
-// iOS Safari suspends all audio when the screen locks. A silent Web Audio
-// oscillator running in parallel tricks the OS into keeping the audio
-// session alive, so the <audio> element continues playing.
-var _keepAliveCtx = null;
+// ───── iOS Background Audio Survival ─────
+// The <audio> element plays via the OS media layer and survives screen lock
+// as long as we don't route it through an AudioContext. The key problem is
+// multi-track playlists: when JS is frozen (screen locked), the ended event
+// can't fire, so the playlist never advances and audio goes silent.
+//
+// Fix: flip audio.loop=true when backgrounded so the OS keeps the current
+// track looping. When we return to foreground, restore playlist advancement.
+var _bgLoopEnabled = false;
 
-function startAudioKeepAlive() {
-  if (_keepAliveCtx) return;
-  try {
-    var AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    _keepAliveCtx = new AC();
-    var osc = _keepAliveCtx.createOscillator();
-    var gain = _keepAliveCtx.createGain();
-    gain.gain.value = 0.001; // inaudible
-    osc.connect(gain);
-    gain.connect(_keepAliveCtx.destination);
-    osc.start(0);
-    console.log('[keepalive] silent oscillator started');
-  } catch (e) {
-    console.warn('[keepalive] failed:', e.message);
+function _enterBackgroundLoop() {
+  var audio = document.getElementById('imm-audio');
+  if (!audio) return;
+  if (!_imm.singleTrackMode && _imm.playlist.length > 1 && !audio.loop) {
+    audio.loop = true;
+    _bgLoopEnabled = true;
+    console.log('[bg-audio] enabled loop for background survival');
   }
 }
 
-function stopAudioKeepAlive() {
-  if (_keepAliveCtx) {
-    _keepAliveCtx.close().catch(function() {});
-    _keepAliveCtx = null;
+function _exitBackgroundLoop() {
+  var audio = document.getElementById('imm-audio');
+  if (!audio) return;
+  if (_bgLoopEnabled) {
+    _bgLoopEnabled = false;
+    if (!_imm.singleTrackMode && _imm.playlist.length > 1) {
+      audio.loop = false;
+      console.log('[bg-audio] restored playlist mode');
+    }
+  }
+  // If audio went silent while backgrounded, restart it
+  if (audio.paused && _imm.started && !_imm._maxCutoffTriggered) {
+    console.log('[bg-audio] audio was paused in background, restarting');
+    audio.play().catch(function(e) {
+      console.warn('[bg-audio] restart failed:', e.name);
+    });
   }
 }
 
-// iOS requires AudioContext to be created/resumed from a user gesture
-function resumeKeepAlive() {
-  if (_keepAliveCtx && _keepAliveCtx.state === 'suspended') {
-    _keepAliveCtx.resume().catch(function() {});
-  }
-}
+// No-ops for backwards compat with existing call sites
+function startAudioKeepAlive() {}
+function stopAudioKeepAlive() {}
+function resumeKeepAlive() {}
 
 // ───── Session Resume (survive refresh) ─────
 function _savePlaybackState() {
@@ -1300,6 +1324,9 @@ setInterval(_savePlaybackState, 10000);
 
 // Elapsed timer updates every 30s
 setInterval(updateElapsed, 30000);
+
+// Keep lock screen position widget accurate
+setInterval(_updatePositionState, 5000);
 
 // Gesture capture — unlocks audio on mobile
 document.addEventListener('click', _onFirstGesture, { once: false });
