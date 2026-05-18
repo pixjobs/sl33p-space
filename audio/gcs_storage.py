@@ -69,6 +69,40 @@ def get_gcs_info(track_id: str) -> dict:
     }
 
 
+def upload_hls(local_dir: str, track_id: str) -> str | None:
+    """Upload HLS manifest + segments to GCS. Returns the looping manifest URL."""
+    if not is_gcs_enabled():
+        return None
+    import glob
+    m3u8_loop = os.path.join(local_dir, f"{track_id}_loop.m3u8")
+    if not os.path.exists(m3u8_loop):
+        return None
+
+    try:
+        client = _get_client()
+        bucket = client.bucket(_bucket_name())
+
+        files = glob.glob(os.path.join(local_dir, f"{track_id}*"))
+        content_types = {
+            ".m3u8": "application/vnd.apple.mpegurl",
+            ".ts": "video/mp2t",
+        }
+        for fpath in files:
+            ext = os.path.splitext(fpath)[1]
+            ct = content_types.get(ext)
+            if not ct:
+                continue
+            obj_name = f"tracks/hls/{os.path.basename(fpath)}"
+            blob = bucket.blob(obj_name)
+            blob.upload_from_filename(fpath, content_type=ct)
+
+        return f"https://storage.googleapis.com/{_bucket_name()}/tracks/hls/{track_id}_loop.m3u8"
+    except Exception as e:
+        import sys
+        print(f"HLS upload failed for {track_id}: {e}", file=sys.stderr)
+        return None
+
+
 def delete_from_gcs(gcs_object: str) -> bool:
     """Delete an object from GCS. Returns True on success."""
     if not is_gcs_enabled():

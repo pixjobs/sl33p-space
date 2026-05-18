@@ -508,6 +508,15 @@ function _setStatus(msg) {
   console.log('[status]', msg);
 }
 
+// Safari/iOS detection — HLS is native on Safari, not on Chrome/Firefox
+var _isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+             || /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+function _resolveTrackSrc(track) {
+  if (_isSafari && track.hls_url) return track.hls_url;
+  return track.src || track.gcs_url || '';
+}
+
 // Queue: set src and wait for canplay
 function _queueTrack(index, autoplay) {
   var audio = document.getElementById('imm-audio');
@@ -517,7 +526,7 @@ function _queueTrack(index, autoplay) {
   if (_imm.playlist.length > 0) {
     track = _imm.playlist[index];
     if (!track) return;
-    src = track.src || track.gcs_url || '';
+    src = _resolveTrackSrc(track);
   } else {
     src = _imm.trackSrc;
     track = { title: _imm.trackTitle };
@@ -541,8 +550,13 @@ function _queueTrack(index, autoplay) {
     _queueTrack._pendingHandler = null;
   }
 
-  // In multi-track mode, disable native loop so ended event fires for chaining
-  audio.loop = (_imm.singleTrackMode || _imm.playlist.length <= 1);
+  // HLS extended manifests already loop for ~8h — don't use audio.loop
+  var isHLS = src && src.indexOf('.m3u8') !== -1;
+  if (isHLS) {
+    audio.loop = false;
+  } else {
+    audio.loop = (_imm.singleTrackMode || _imm.playlist.length <= 1);
+  }
 
   console.log('[audio] QUEUE track', index, track.title || '', 'loop=' + audio.loop, src.slice(-50));
   _setStatus('Loading: ' + (track.title || 'track') + '...');
@@ -1223,6 +1237,8 @@ var _bgLoopEnabled = false;
 function _enterBackgroundLoop() {
   var audio = document.getElementById('imm-audio');
   if (!audio) return;
+  // HLS extended manifests already handle looping — no JS intervention needed
+  if (audio.src && audio.src.indexOf('.m3u8') !== -1) return;
   if (!_imm.singleTrackMode && _imm.playlist.length > 1 && !audio.loop) {
     audio.loop = true;
     _bgLoopEnabled = true;

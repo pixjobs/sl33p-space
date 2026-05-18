@@ -17,7 +17,7 @@ import time
 log = logging.getLogger(__name__)
 
 from audio.mood_tagger import tag_track_moods
-from audio.gcs_storage import is_gcs_enabled, upload_track as gcs_upload, get_gcs_info, delete_from_gcs
+from audio.gcs_storage import is_gcs_enabled, upload_track as gcs_upload, upload_hls as gcs_upload_hls, get_gcs_info, delete_from_gcs
 from db.tracks import (
     upsert_track, get_track, get_all_tracks, ensure_indexes,
     archive_track as db_archive, unarchive_track as db_unarchive,
@@ -112,6 +112,74 @@ _VARIATION_HINTS = [
     "Quieter, more minimal, like the stillness before dawn.",
     "Richer harmonics, layered overtones, slowly breathing texture.",
 ]
+
+
+def _convert_to_hls(ogg_path: str, track_id: str, loop_hours: int = 8) -> str | None:
+    """Convert OGG to HLS segments + generate an extended looping manifest.
+
+    Returns the directory containing .m3u8 and .ts files, or None on failure.
+    """
+    import subprocess
+    import tempfile
+
+    hls_dir = tempfile.mkdtemp(prefix="hls_")
+    base_m3u8 = os.path.join(hls_dir, f"{track_id}.m3u8")
+    seg_pattern = os.path.join(hls_dir, f"{track_id}_%03d.ts")
+
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", "-i", ogg_path,
+            "-c:a", "aac", "-b:a", "128k", "-ac", "2",
+            "-hls_time", "10",
+            "-hls_list_size", "0",
+            "-hls_playlist_type", "vod",
+            "-hls_segment_filename", seg_pattern,
+            base_m3u8,
+        ], check=True, capture_output=True, timeout=120)
+    except Exception as e:
+        log.error("HLS conversion failed for %s: %s", track_id, e)
+        shutil.rmtree(hls_dir, ignore_errors=True)
+        return None
+
+    # Parse the base manifest to extract segment lines
+    with open(base_m3u8) as f:
+        lines = f.readlines()
+
+    header_lines = []
+    segment_block = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "#EXT-X-ENDLIST":
+            continue
+        if stripped.startswith("#EXTINF:") or (not stripped.startswith("#") and stripped.endswith(".ts")):
+            segment_block.append(line)
+        else:
+            header_lines.append(line)
+
+    # Calculate repetitions needed for the target duration
+    total_segment_duration = 0
+    for line in segment_block:
+        if line.strip().startswith("#EXTINF:"):
+            total_segment_duration += float(line.strip().split(":")[1].rstrip(","))
+    if total_segment_duration <= 0:
+        shutil.rmtree(hls_dir, ignore_errors=True)
+        return None
+    reps = max(1, int((loop_hours * 3600) / total_segment_duration))
+
+    # Write the extended looping manifest
+    loop_m3u8 = os.path.join(hls_dir, f"{track_id}_loop.m3u8")
+    with open(loop_m3u8, "w") as f:
+        for line in header_lines:
+            f.write(line)
+        for _ in range(reps):
+            for line in segment_block:
+                f.write(line)
+        f.write("#EXT-X-ENDLIST\n")
+
+    log.info("HLS: %s → %d segments × %d reps = %.0fh",
+             track_id, len([l for l in segment_block if l.strip().endswith(".ts")]),
+             reps, (total_segment_duration * reps) / 3600)
+    return hls_dir
 
 
 def _stitch_clips(clip_paths: list[str], filepath: str,
@@ -454,6 +522,16 @@ def generate_music(prompt: str, title: str = "",
             if gcs_url:
                 gcs_info = get_gcs_info(key)
 
+        # HLS conversion + upload
+        hls_url = None
+        hls_dir = _convert_to_hls(filepath, key)
+        if hls_dir and is_gcs_enabled():
+            hls_url = gcs_upload_hls(hls_dir, key)
+            if hls_url:
+                log.info("HLS uploaded: %s", hls_url)
+        if hls_dir:
+            shutil.rmtree(hls_dir, ignore_errors=True)
+
         # Duration
         duration_seconds = None
         try:
@@ -486,6 +564,8 @@ def generate_music(prompt: str, title: str = "",
         }
         if gcs_url:
             track_data["gcs_url"] = gcs_url
+        if hls_url:
+            track_data["hls_url"] = hls_url
 
         upsert_track(track_data)
 
@@ -592,6 +672,7 @@ def _track_entry(track: dict) -> dict:
         "avg_rating": track.get("avg_rating"),
         "generated_by": track.get("generated_by", "system"),
         "visibility": track.get("visibility", "public"),
+        "hls_url": track.get("hls_url"),
     }
 
 
