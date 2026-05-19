@@ -156,12 +156,13 @@ def create_app(agent_runner=None):
     @require_auth
     def plan():
         from audio.music_gen import list_generated_music, get_preset_prompts
-        from db.sessions import get_pending_review, get_recent_sessions, get_sleep_stats, get_active_session
+        from db.sessions import get_pending_review, get_recent_sessions, get_sleep_stats, get_active_session, cleanup_stale_sessions
         from db.insights import get_user_sleep_insights
         from db.users import get_user
 
         user = get_current_user()
         uid = get_user_id()
+        cleanup_stale_sessions(uid)
         hour = datetime.now().hour
         if hour < 12:
             greeting = "Good morning"

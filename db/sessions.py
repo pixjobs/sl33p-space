@@ -21,7 +21,7 @@ def create_manual_session(user_id: str, bed_time, wake_time, mood: str = "calm")
     db = get_db()
     if db is None:
         return None
-    _auto_complete_stale(db, user_id)
+    _force_complete_active(db, user_id)
     now = datetime.now(timezone.utc)
     if bed_time.tzinfo is None:
         bed_time = bed_time.replace(tzinfo=timezone.utc)
@@ -61,7 +61,7 @@ def create_session(user_id: str, plan: dict,
     db = get_db()
     if db is None:
         return None
-    _auto_complete_stale(db, user_id)
+    _force_complete_active(db, user_id)
     now = datetime.now(timezone.utc)
     doc = {
         "user_id": user_id,
@@ -219,6 +219,7 @@ def get_pending_review(user_id: str) -> dict | None:
             "user_id": user_id,
             "status": "completed",
             "actual.started_at": {"$ne": None},
+            "review.auto_completed": {"$ne": True},
         },
         sort=[("created_at", -1)],
     )
@@ -377,6 +378,11 @@ def update_session_notes(session_id: str, notes: str,
 
 
 def _auto_complete_stale(db, user_id: str):
+    """Auto-complete sessions that are clearly stale (older than STALE_HOURS).
+
+    Auto-completed sessions are marked reviewed+skipped so they don't trigger
+    review prompts for crashed/abandoned sessions.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_HOURS)
     now = datetime.now(timezone.utc)
     db.sleep_sessions.update_many(
@@ -386,8 +392,9 @@ def _auto_complete_stale(db, user_id: str):
             "actual.started_at": {"$lt": cutoff},
         },
         {"$set": {
-            "status": "completed",
+            "status": "reviewed",
             "actual.ended_at": cutoff,
+            "review": {"skipped": True, "reviewed_at": now, "auto_completed": True},
             "updated_at": now,
         }},
     )
@@ -402,6 +409,46 @@ def _auto_complete_stale(db, user_id: str):
             "updated_at": now,
         }},
     )
+
+
+def _force_complete_active(db, user_id: str):
+    """Force-complete any active/planned sessions when starting a new one.
+
+    Unlike _auto_complete_stale, this has no age threshold — if a user starts
+    a new session, any prior session is clearly over.
+    """
+    now = datetime.now(timezone.utc)
+    db.sleep_sessions.update_many(
+        {
+            "user_id": user_id,
+            "status": "active",
+        },
+        {"$set": {
+            "status": "reviewed",
+            "actual.ended_at": now,
+            "review": {"skipped": True, "reviewed_at": now, "auto_completed": True},
+            "updated_at": now,
+        }},
+    )
+    db.sleep_sessions.update_many(
+        {
+            "user_id": user_id,
+            "status": "planned",
+        },
+        {"$set": {
+            "status": "skipped",
+            "updated_at": now,
+        }},
+    )
+
+
+def cleanup_stale_sessions(user_id: str) -> int:
+    """Public entry point for stale session cleanup (called from page loads)."""
+    db = get_db()
+    if db is None:
+        return 0
+    _auto_complete_stale(db, user_id)
+    return 0
 
 
 def clear_stale_reviews(user_id: str) -> int:
