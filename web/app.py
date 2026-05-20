@@ -120,14 +120,60 @@ def create_app(agent_runner=None):
 
     @app.context_processor
     def _inject_globals():
+        # authDomain = the exact host the browser is on right now. This keeps
+        # the Firebase auth popup/iframe same-origin so Safari ITP and
+        # third-party-cookie blockers don't interfere. Works for any domain
+        # pointing at this service (sleepspace.pixjobs.com, sleep-space.pixjobs.com,
+        # *.run.app, localhost). The /__/auth proxy below handles the actual
+        # handshake with firebaseapp.com.
+        own_host = request.host  # includes port on localhost, excludes scheme
         cfg = {
             "apiKey": os.environ.get("FIREBASE_API_KEY", ""),
-            "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", ""),
+            "authDomain": own_host,
             "projectId": os.environ.get("FIREBASE_PROJECT_ID", ""),
             "appId": os.environ.get("FIREBASE_APP_ID", ""),
         }
         firebase_config = cfg if cfg["apiKey"] else None
         return {"firebase_config": firebase_config, "is_admin": is_admin()}
+
+    # ── Firebase auth proxy ──
+    # Firebase's signInWithPopup/Redirect loads helper pages from authDomain.
+    # By setting authDomain to our own domain and proxying /__/auth to
+    # firebaseapp.com, we keep everything same-origin so Safari ITP and
+    # third-party-cookie blockers don't break the flow.
+    # See: https://firebase.google.com/docs/auth/web/redirect-best-practices
+    _firebase_project = os.environ.get("FIREBASE_PROJECT_ID", "sl33p-space")
+    _firebase_origin = f"https://{_firebase_project}.firebaseapp.com"
+
+    @app.route("/__/auth/<path:subpath>", methods=["GET", "POST"])
+    def _firebase_auth_proxy(subpath):
+        import requests as req
+        target = f"{_firebase_origin}/__/auth/{subpath}"
+        qs = request.query_string.decode()
+        if qs:
+            target += "?" + qs
+        headers = {k: v for k, v in request.headers if k.lower() not in
+                   ("host", "connection", "content-length", "transfer-encoding")}
+        resp = req.request(
+            request.method, target,
+            headers=headers,
+            data=request.get_data(),
+            allow_redirects=False,
+            timeout=15,
+        )
+        excluded = {"transfer-encoding", "connection", "content-encoding", "content-length"}
+        resp_headers = [(k, v) for k, v in resp.headers.items() if k.lower() not in excluded]
+        from flask import Response
+        return Response(resp.content, status=resp.status_code, headers=resp_headers)
+
+    @app.route("/__/firebase/init.json")
+    def _firebase_init_json():
+        import requests as req
+        target = f"{_firebase_origin}/__/firebase/init.json"
+        resp = req.get(target, timeout=10)
+        from flask import Response
+        return Response(resp.content, status=resp.status_code,
+                        headers={"Content-Type": "application/json"})
 
     @app.route("/healthz")
     def healthz():
