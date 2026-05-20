@@ -120,16 +120,14 @@ def create_app(agent_runner=None):
 
     @app.context_processor
     def _inject_globals():
-        # authDomain = the exact host the browser is on right now. This keeps
-        # the Firebase auth popup/iframe same-origin so Safari ITP and
-        # third-party-cookie blockers don't interfere. Works for any domain
-        # pointing at this service (sleepspace.pixjobs.com, sleep-space.pixjobs.com,
-        # *.run.app, localhost). The /__/auth proxy below handles the actual
-        # handshake with firebaseapp.com.
-        own_host = request.host  # includes port on localhost, excludes scheme
+        # authDomain stays at <project>.firebaseapp.com so we don't need to
+        # register extra redirect URIs in the GCP OAuth client. The popup
+        # flow works fine cross-origin (only signInWithRedirect is broken by
+        # Safari ITP). If we later switch to a self-hosted auth domain, the
+        # /__/auth proxy below is already in place.
         cfg = {
             "apiKey": os.environ.get("FIREBASE_API_KEY", ""),
-            "authDomain": own_host,
+            "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", ""),
             "projectId": os.environ.get("FIREBASE_PROJECT_ID", ""),
             "appId": os.environ.get("FIREBASE_APP_ID", ""),
         }
