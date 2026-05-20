@@ -1,58 +1,123 @@
 let _authToken = null;
 
+// Resolves once Firebase has determined the initial auth state (signed in OR out).
+// API calls await this so they don't fire before the bearer token is ready.
+var _authReadyResolve;
+window.__authReady = new Promise(function(r) { _authReadyResolve = r; });
+
+// Mobile detection — popups are unreliable on iOS Safari, mobile Chrome, in-app browsers,
+// and PWAs in standalone mode. Use redirect flow there.
+function _isMobileAuthEnv() {
+  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return true;
+  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+  if (window.navigator.standalone) return true;  // iOS home-screen PWA
+  return false;
+}
+
+function _syncNavUI(user) {
+  var signInBtn = document.getElementById('sign-in-btn');
+  var userInfo = document.getElementById('nav-user-info');
+  var avatar = document.getElementById('nav-avatar');
+  var username = document.getElementById('nav-username');
+  if (user) {
+    if (signInBtn) signInBtn.style.display = 'none';
+    if (userInfo) userInfo.style.display = '';
+    if (avatar) { avatar.src = user.photoURL || ''; avatar.style.display = user.photoURL ? '' : 'none'; }
+    if (username) username.textContent = user.displayName || user.email || '';
+  } else {
+    if (signInBtn) signInBtn.style.display = '';
+    if (userInfo) userInfo.style.display = 'none';
+  }
+}
+
 if (window.__firebaseConfig) {
   firebase.initializeApp(window.__firebaseConfig);
 
-  firebase.auth().onAuthStateChanged(function(user) {
-    var signInBtn = document.getElementById('sign-in-btn');
-    var userInfo = document.getElementById('nav-user-info');
-    var avatar = document.getElementById('nav-avatar');
-    var username = document.getElementById('nav-username');
+  // Explicit LOCAL persistence so iOS Safari ITP / PWA standalone mode doesn't
+  // silently downgrade to NONE and forget the user across tab switches.
+  firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(e) {
+    console.warn('[auth] setPersistence failed:', e && e.message);
+  });
 
-    if (user) {
-      user.getIdToken().then(function(token) {
-        _authToken = token;
-        return fetch('/api/auth/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: token })
-        });
-      }).then(function() {
-        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (tz) api('/api/user/timezone', 'POST', { timezone: tz });
-
-        var refCode = localStorage.getItem('sl33p_ref');
-        if (refCode) {
-          localStorage.removeItem('sl33p_ref');
-          api('/api/user/redeem-referral', 'POST', { code: refCode }).then(function(res) {
-            if (res && res.status === 'ok') showToast('Referral bonus: +1 credit!', 'success');
-          });
-        }
-
-        if (window.location.pathname === '/') window.location.href = '/plan';
-      });
-      if (signInBtn) signInBtn.style.display = 'none';
-      if (userInfo) userInfo.style.display = '';
-      if (avatar) { avatar.src = user.photoURL || ''; avatar.style.display = user.photoURL ? '' : 'none'; }
-      if (username) username.textContent = user.displayName || user.email || '';
-    } else {
-      _authToken = null;
-      if (signInBtn) signInBtn.style.display = '';
-      if (userInfo) userInfo.style.display = 'none';
+  // Capture the result of a redirect-based sign-in (mobile flow). Surfaces auth errors
+  // (e.g. unauthorized domain) instead of leaving the user stuck on the welcome page.
+  firebase.auth().getRedirectResult().catch(function(err) {
+    if (err && err.code && err.code !== 'auth/no-redirect-operation') {
+      var errEl = document.getElementById('auth-error');
+      var msg = 'Sign-in failed: ' + (err.message || err.code);
+      if (errEl) { errEl.textContent = msg; errEl.style.display = ''; }
+      else { showToast(msg, 'error'); }
     }
   });
 
-  // Refresh token before expiry
-  setInterval(function() {
-    var user = firebase.auth().currentUser;
-    if (user) user.getIdToken(true).then(function(token) { _authToken = token; });
-  }, 10 * 60 * 1000);
+  // Token-only listener: fires on initial load, on sign-in/out, AND on every auto-refresh.
+  // Keeps _authToken fresh without a setInterval that mobile browsers throttle.
+  firebase.auth().onIdTokenChanged(function(user) {
+    if (!user) {
+      _authToken = null;
+      _syncNavUI(null);
+      if (_authReadyResolve) { _authReadyResolve(); _authReadyResolve = null; }
+      return;
+    }
+    user.getIdToken().then(function(token) {
+      _authToken = token;
+      return fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+      });
+    }).then(function() {
+      _syncNavUI(user);
+      if (_authReadyResolve) { _authReadyResolve(); _authReadyResolve = null; }
+    }).catch(function() {
+      // Even on session-sync failure, let API calls proceed (they'll retry on 401).
+      _syncNavUI(user);
+      if (_authReadyResolve) { _authReadyResolve(); _authReadyResolve = null; }
+    });
+  });
+
+  // First-sign-in side effects (timezone, referral, /plan bounce) — once only per session.
+  var _postSignInDone = false;
+  firebase.auth().onAuthStateChanged(function(user) {
+    if (!user || _postSignInDone) return;
+    _postSignInDone = true;
+    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) api('/api/user/timezone', 'POST', { timezone: tz });
+    var refCode = localStorage.getItem('sl33p_ref');
+    if (refCode) {
+      localStorage.removeItem('sl33p_ref');
+      api('/api/user/redeem-referral', 'POST', { code: refCode }).then(function(res) {
+        if (res && res.status === 'ok') showToast('Referral bonus: +1 credit!', 'success');
+      });
+    }
+    if (window.location.pathname === '/') window.location.href = '/plan';
+  });
+
+  // Fallback: if Firebase never fires (rare — disabled storage, network race), release
+  // the gate after 4s so the page isn't deadlocked. API calls will still attempt the
+  // session cookie and re-auth on 401.
+  setTimeout(function() {
+    if (_authReadyResolve) { _authReadyResolve(); _authReadyResolve = null; }
+  }, 4000);
 }
 
 function signInWithGoogle() {
   if (!window.__firebaseConfig) return;
   var provider = new firebase.auth.GoogleAuthProvider();
+  if (_isMobileAuthEnv()) {
+    firebase.auth().signInWithRedirect(provider).catch(function(err) {
+      showToast('Sign-in failed: ' + err.message, 'error');
+    });
+    return;
+  }
   firebase.auth().signInWithPopup(provider).catch(function(err) {
+    // Popup blocked / closed by user — fall back to redirect.
+    if (err && (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request')) {
+      firebase.auth().signInWithRedirect(provider).catch(function(e2) {
+        showToast('Sign-in failed: ' + e2.message, 'error');
+      });
+      return;
+    }
     showToast('Sign-in failed: ' + err.message, 'error');
   });
 }
@@ -114,15 +179,52 @@ function signOutUser() {
 
 // ───── API Helper ─────
 
+async function _refreshAuthToken() {
+  if (!window.__firebaseConfig) return null;
+  var user = firebase.auth().currentUser;
+  if (!user) return null;
+  try {
+    var token = await user.getIdToken(true);
+    _authToken = token;
+    // Refresh the Flask session cookie too so subsequent page loads stay signed in.
+    fetch('/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token })
+    }).catch(function() {});
+    return token;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function api(url, method, body) {
+  // Wait for the initial auth state to settle so we don't fire a bearer-less request
+  // milliseconds before Firebase finishes restoring the user.
+  if (window.__authReady) {
+    try { await window.__authReady; } catch (_) {}
+  }
   method = method || 'GET';
-  var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
-  if (_authToken) opts.headers['Authorization'] = 'Bearer ' + _authToken;
-  if (body) opts.body = JSON.stringify(body);
-  var res = await fetch(url, opts);
+
+  async function _send() {
+    var opts = { method: method, headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' };
+    if (_authToken) opts.headers['Authorization'] = 'Bearer ' + _authToken;
+    if (body) opts.body = JSON.stringify(body);
+    return fetch(url, opts);
+  }
+
+  var res = await _send();
+
   if (res.status === 401) {
-    showToast('Authentication required. Please sign in.', 'error');
-    return { error: 'Authentication required' };
+    // Likely a stale bearer (tab backgrounded past token expiry) — force-refresh and retry once.
+    var fresh = await _refreshAuthToken();
+    if (fresh) {
+      res = await _send();
+    }
+    if (res.status === 401) {
+      showToast('Session expired. Please sign in again.', 'error');
+      return { error: 'Authentication required' };
+    }
   }
   if (res.status === 403) {
     var tierErr = await res.json();

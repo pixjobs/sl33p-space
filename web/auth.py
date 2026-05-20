@@ -7,6 +7,7 @@ on every request. No bypass mode — all users must sign in.
 
 import functools
 import os
+from datetime import timedelta
 
 from flask import g, jsonify, redirect, request, session
 
@@ -46,6 +47,8 @@ def init_auth(app):
     app.secret_key = secret
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # 30-day permanent session so mobile browsers don't wipe the cookie on tab/app switch
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
     if os.environ.get("FLASK_ENV") == "production" or os.environ.get("K_SERVICE"):
         app.config["SESSION_COOKIE_SECURE"] = True
 
@@ -91,6 +94,7 @@ def init_auth(app):
                 "email": decoded.get("email", ""),
                 "picture": decoded.get("picture"),
             }
+            session.permanent = True
             session["user"] = user
             _sync_user_to_db(user)
             return jsonify({"ok": True})
