@@ -2,7 +2,7 @@
   <div class="px-5 py-4">
     <div class="flex items-center gap-2.5 mb-3">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-4 h-4 text-white/40"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
-      <span class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Recent Sessions</span>
+      <span class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Sleep Journal</span>
       <span class="ml-auto flex gap-1 items-center" id="tracking-toggle">
         <button class="tracking-opt px-2 py-0.5 bg-transparent border border-border rounded-[10px] text-white/25 text-[0.5rem] cursor-pointer transition-colors{% if tracking_level == 'minimal' %} active{% endif %}" data-level="minimal" onclick="setTrackingLevel(this)">Min</button>
         <button class="tracking-opt px-2 py-0.5 bg-transparent border border-border rounded-[10px] text-white/25 text-[0.5rem] cursor-pointer transition-colors{% if tracking_level == 'basic' or not tracking_level %} active{% endif %}" data-level="basic" onclick="setTrackingLevel(this)">Basic</button>

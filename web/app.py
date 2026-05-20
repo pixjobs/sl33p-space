@@ -659,7 +659,11 @@ def create_app(agent_runner=None):
         from web.scenes import get_apod
         single = get_apod()
         if single:
-            return jsonify({"images": [{"url": single["url"], "title": single.get("title", "")}]})
+            return jsonify({"images": [{
+                "url": single["url"],
+                "title": single.get("title", ""),
+                "copyright": single.get("copyright", ""),
+            }]})
         return jsonify({"error": "No APOD available"}), 404
 
     @app.route("/api/scenes/scenic")

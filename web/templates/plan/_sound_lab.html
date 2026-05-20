@@ -1,9 +1,17 @@
 {# ── Track Library ── #}
 <section class="bg-surface border border-border rounded-2xl overflow-hidden backdrop-blur-xl mb-4" id="library-card">
   <div class="px-5 py-4">
-    <div class="flex items-center justify-between mb-3">
-      <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Soundscapes</div>
-      <div class="flex gap-1" id="library-scope-toggle">
+    <div class="library-head">
+      <div class="library-head-title">
+        <div class="text-[0.6rem] font-semibold uppercase tracking-[2px] text-white/25">Soundscapes</div>
+        {% if user_tier and user_tier.type != 'admin' %}
+        <div class="library-quota">
+          <span>{{ user_tier.generations_remaining or 0 }} gen{{ 's' if user_tier.generations_remaining != 1 else '' }} left this month</span>
+          {% if user_tier.credits_balance and user_tier.credits_balance > 0 %}<span class="library-quota-credits">&middot; {{ user_tier.credits_balance }} credits</span>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="scope-pill-row" id="library-scope-toggle">
         <button class="scope-pill active" data-scope="all" onclick="filterTracks('all', this)">All</button>
         <button class="scope-pill" data-scope="mine" onclick="filterTracks('mine', this)">Mine</button>
         <button class="scope-pill" data-scope="public" onclick="filterTracks('public', this)">Public</button>

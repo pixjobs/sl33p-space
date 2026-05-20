@@ -336,50 +336,239 @@ ROOT_TOOLS = [
 
 
 # --- Structured recommendation (used by /api/sleep/recommend) ---
+#
+# Architecture: agent runs every time the plan page loads. To stay cheap we
+# *pre-compute* everything we deterministically can (insights, playlist,
+# candidate trace), then make a single Gemini call with a tight JSON schema
+# for the creative bits (vibe, reasoning, predicted outcome). One call per
+# page load, ~200 output tokens, structured output prevents parsing failures.
+
+
+def _build_plan_trace(insights: dict, playlist_preview: list, mood: str,
+                      chosen_title: str | None) -> list[dict]:
+    """Construct the agent's reasoning trace from pre-computed MongoDB data.
+
+    Free (no LLM tokens) and gives the UI something to render that makes the
+    agent feel like it actually walked through the data instead of guessing.
+    """
+    trace = []
+    stats = insights.get("stats", {}) or {}
+    reviewed = stats.get("reviewed_sessions", 0)
+
+    if reviewed:
+        avg = stats.get("avg_rating")
+        trace.append({
+            "step": "Pulled sleep history",
+            "detail": f"{reviewed} reviewed nights, avg {avg or '?'}/5 from MongoDB",
+        })
+    else:
+        trace.append({
+            "step": "Pulled sleep history",
+            "detail": "First night — no prior data yet, exploring",
+        })
+
+    matrix = insights.get("mood_track_matrix", []) or []
+    mood_hit = next((m for m in matrix if m.get("mood") == mood), None)
+    if mood_hit:
+        trace.append({
+            "step": f"Cross-referenced mood × track for '{mood}'",
+            "detail": (f"{mood_hit['track']} leads at {mood_hit['avg_rating']}/5 "
+                       f"across {mood_hit['sessions']} sessions"),
+        })
+    elif matrix:
+        top = matrix[0]
+        trace.append({
+            "step": "Checked mood × track matrix",
+            "detail": (f"No '{mood}' history yet — best overall pairing is "
+                       f"{top['track']} when {top['mood']} ({top['avg_rating']}/5)"),
+        })
+
+    best_factor = insights.get("best_factor")
+    worst_factor = insights.get("challenging_factor")
+    if worst_factor and worst_factor.get("avg_rating") and worst_factor["avg_rating"] < 3.5:
+        trace.append({
+            "step": "Considered lifestyle factors",
+            "detail": (f"{worst_factor['factor'].replace('_', ' ').title()} drags your "
+                       f"sleep to {worst_factor['avg_rating']}/5 — favoring deeper arc"),
+        })
+    elif best_factor and best_factor.get("avg_rating") and best_factor["avg_rating"] >= 4:
+        trace.append({
+            "step": "Considered lifestyle factors",
+            "detail": (f"{best_factor['factor'].replace('_', ' ').title()} nights "
+                       f"hit {best_factor['avg_rating']}/5 — good signal"),
+        })
+
+    best_hour = insights.get("best_hour")
+    if best_hour is not None:
+        trace.append({
+            "step": "Optimal sleep window",
+            "detail": f"Best ratings start around {best_hour:02d}:00",
+        })
+
+    if playlist_preview:
+        arc = " → ".join(t.get("role", "?") for t in playlist_preview[:3])
+        trace.append({
+            "step": "Built sleep arc",
+            "detail": f"{len(playlist_preview)} tracks · {arc}",
+        })
+
+    if chosen_title:
+        trace.append({
+            "step": "Selected tonight's track",
+            "detail": f"'{chosen_title}' — top match for {mood}",
+        })
+
+    return trace
+
+
+def _deterministic_pick(insights: dict, plan: dict, mood: str) -> tuple[str | None, str]:
+    """Pick a track and write a fallback reasoning line from MongoDB data alone."""
+    best = insights.get("best_track")
+    matrix = insights.get("mood_track_matrix", []) or []
+    best_hour = insights.get("best_hour")
+    streak = insights.get("current_streak", 0)
+    mood_hit = next((m for m in matrix if m.get("mood") == mood), None)
+
+    if mood_hit and mood_hit.get("sessions", 0) >= 2:
+        title = mood_hit["track"]
+        reasoning = (f"{title} leads when you're {mood} — "
+                     f"{mood_hit['avg_rating']}/5 across {mood_hit['sessions']} sessions.")
+    elif best and best.get("title"):
+        title = best["title"]
+        reasoning = f"Your top-rated track at {best.get('avg_rating', '?')}/5 — staying with what works."
+    else:
+        available = plan.get("available_tracks", [])
+        title = available[0] if available else None
+        reasoning = "Exploring — no clear winner yet, this is a clean start."
+
+    if best_hour is not None:
+        reasoning += f" Best window starts around {best_hour:02d}:00."
+    if streak >= 2:
+        reasoning += f" {streak}-night streak."
+
+    return title, reasoning
+
+
+def _predict_outcome(insights: dict, mood: str, title: str | None) -> str:
+    """Predict tonight's rating from the mood×track cell, or describe the exploration state."""
+    if not title:
+        return "First night — learning your pattern"
+    matrix = insights.get("mood_track_matrix", []) or []
+    cell = next((m for m in matrix
+                 if m.get("mood") == mood and m.get("track") == title), None)
+    if cell and cell.get("sessions", 0) >= 2:
+        return f"Predicted {cell['avg_rating']}/5 based on {cell['sessions']} similar nights"
+    track_perf = insights.get("track_performance", []) or []
+    track_row = next((t for t in track_perf if t.get("title") == title), None)
+    if track_row and track_row.get("avg_rating"):
+        return f"Track averages {track_row['avg_rating']}/5 — new combination, exploring"
+    return "New territory — no prior data for this combo"
+
 
 def get_recommendation(user_id: str, mood: str = "calm") -> dict:
-    """Generate a data-driven sleep recommendation via the agent's tools.
+    """Generate a rich sleep recommendation: deterministic plan + one Gemini call.
 
-    Calls the same MongoDB-backed tools the chat agent uses, then optionally
-    passes the data through Gemini for a natural-language synthesis.
+    Pre-computes everything from MongoDB (insights, playlist, trace, prediction),
+    then issues a single structured-output Gemini call for the creative
+    synthesis (vibe caption + reasoning). One LLM call per recommendation.
     """
     _set_user(user_id)
 
     insights = get_mongodb_sleep_insights()
     plan = recommend_sleep_plan(mood=mood)
+    playlist_preview = plan.get("playlist_preview") or []
 
-    if not _adk_available or not os.environ.get("GOOGLE_API_KEY"):
-        return _fallback_recommendation(insights, plan, mood)
+    title, fallback_reasoning = _deterministic_pick(insights, plan, mood)
+    plan_trace = _build_plan_trace(insights, playlist_preview, mood, title)
+    predicted_outcome = _predict_outcome(insights, mood, title)
+
+    base = {
+        "soundscape_title": title,
+        "reasoning": fallback_reasoning,
+        "vibe": None,
+        "predicted_outcome": predicted_outcome,
+        "confidence": 0.6 if title else 0.2,
+        "plan_trace": plan_trace,
+        "playlist_id": plan.get("playlist_id"),
+        "playlist_arc": [
+            {"title": t.get("title"), "role": t.get("role")}
+            for t in playlist_preview[:3]
+        ],
+        "source": "deterministic",
+    }
+
+    if not _adk_available or not os.environ.get("GOOGLE_API_KEY") or not title:
+        return base
 
     try:
         from google import genai
+        from google.genai import types as genai_types
+        from pydantic import BaseModel
+
+        class _Synthesis(BaseModel):
+            vibe: str
+            reasoning: str
+            confidence: float
+
+        available_titles = plan.get("available_tracks", [])
         client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
         model = "gemini-3-flash-preview"
 
-        prompt = (
-            "You are a sleep coach. Based on this user's MongoDB sleep data, "
-            "recommend what they should do tonight.\n\n"
-            f"User mood: {mood}\n"
-            f"Insights: {json.dumps(insights, default=str)}\n"
-            f"Available tracks: {json.dumps(plan.get('available_tracks', []))}\n"
-            f"Playlist preview: {json.dumps(plan.get('playlist_preview', []))}\n"
-            f"Stats: total_sessions={plan.get('total_sessions')}, "
-            f"avg_rating={plan.get('avg_rating')}, top_sound={plan.get('top_sound')}\n\n"
-            "Respond with ONLY valid JSON, no markdown:\n"
-            '{"soundscape_title": "exact track name from available_tracks", '
-            '"reasoning": "1-2 sentences citing specific numbers from the data"}'
-        )
+        recent_pattern = (insights.get("recent_pattern") or [])[:7]
+        recent_notes = (insights.get("recent_notes") or [])[:5]
+        context = {
+            "user_mood": mood,
+            "chosen_track": title,
+            "available_tracks": available_titles,
+            "playlist_arc": base["playlist_arc"],
+            "insights_summary": {
+                "best_track": insights.get("best_track"),
+                "best_mood": insights.get("best_mood"),
+                "best_hour": insights.get("best_hour"),
+                "current_streak": insights.get("current_streak"),
+                "mood_track_matrix": (insights.get("mood_track_matrix") or [])[:5],
+                "best_factor": insights.get("best_factor"),
+                "challenging_factor": insights.get("challenging_factor"),
+                "note_pattern": insights.get("note_pattern"),
+                "stats": insights.get("stats"),
+            },
+            "recent_nights": [
+                {
+                    "date": n.get("date"),
+                    "rating": n.get("rating"),
+                    "energy": n.get("morning_energy"),
+                    "track": n.get("track"),
+                }
+                for n in recent_pattern
+            ],
+            "recent_notes": recent_notes,
+            "trace": plan_trace,
+        }
 
         response = client.models.generate_content(
-            model=model, contents=prompt,
-            config={
-                "system_instruction": (
-                    "You are a sleep coach. Be concise. "
-                    "Cite specific numbers from the data (ratings, session counts, best hour). "
-                    "The soundscape_title MUST be an exact match from available_tracks."
+            model=model,
+            contents=(
+                "You are sl33p-space, a sleep coach. Produce a synthesis for tonight's plan.\n\n"
+                f"CONTEXT (already decided, do not change the track):\n{json.dumps(context, default=str)}\n\n"
+                "Return JSON with:\n"
+                "- vibe: a 4-8 word poetic caption for tonight's arc (e.g. "
+                "'midnight ocean → cathedral hush → deep static'). Evocative, not flowery.\n"
+                "- reasoning: ONE sentence (max 24 words) that cites at least one real signal "
+                "from the context. Prefer, in order: a recurring note keyword, a recent note, "
+                "an energy/rating gap (e.g. 'rating 4 but energy 2'), a track rating, a streak, "
+                "or best hour. Reference the journal when notes are present — e.g. "
+                "'you mentioned X two nights ago, so...'.\n"
+                "- confidence: float 0-1 reflecting data depth. <3 reviewed sessions = ≤0.4."
+            ),
+            config=genai_types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=_Synthesis,
+                temperature=0.85,
+                system_instruction=(
+                    "Be specific and concrete. No clichés ('drift off', 'sweet dreams'). "
+                    "Cite numbers from the data. Never invent track names."
                 ),
-                "temperature": 0.7,
-            },
+            ),
         )
 
         try:
@@ -389,47 +578,14 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
         except Exception:
             pass
 
-        text = response.text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        rec = json.loads(text)
-        rec.setdefault("playlist_id", plan.get("playlist_id"))
-        return rec
+        synth = _Synthesis.model_validate_json(response.text)
+        base["vibe"] = synth.vibe
+        base["reasoning"] = synth.reasoning
+        base["confidence"] = max(0.0, min(1.0, synth.confidence))
+        base["source"] = "gemini"
+        return base
     except Exception:
-        return _fallback_recommendation(insights, plan, mood)
-
-
-def _fallback_recommendation(insights: dict, plan: dict, mood: str) -> dict:
-    """Data-driven recommendation without Gemini — still useful thanks to MongoDB."""
-    best = insights.get("best_track")
-    matrix = insights.get("mood_track_matrix", [])
-    best_hour = insights.get("best_hour")
-    streak = insights.get("current_streak", 0)
-
-    mood_match = next((m for m in matrix if m["mood"] == mood), None)
-
-    if mood_match and mood_match.get("sessions", 0) >= 2:
-        title = mood_match["track"]
-        reasoning = (f"{title} works best when you're {mood} "
-                     f"({mood_match['avg_rating']}/5 across {mood_match['sessions']} sessions)")
-    elif best and best.get("title"):
-        title = best["title"]
-        reasoning = f"Your top-rated track at {best.get('avg_rating', '?')}/5"
-    else:
-        available = plan.get("available_tracks", [])
-        title = available[0] if available else None
-        reasoning = "A good starting point for restful sleep"
-
-    if best_hour is not None:
-        reasoning += f". Your best sleep starts around {best_hour}:00"
-    if streak >= 2:
-        reasoning += f". {streak}-night streak!"
-
-    return {
-        "soundscape_title": title,
-        "reasoning": reasoning,
-        "playlist_id": plan.get("playlist_id"),
-    }
+        return base
 
 
 # --- Agent setup ---

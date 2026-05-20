@@ -5,7 +5,8 @@ from db import get_db
 
 
 def cache_apod(date_str: str, url: str, hdurl: str = "", title: str = "",
-               explanation: str = "", media_type: str = "image") -> bool:
+               explanation: str = "", media_type: str = "image",
+               copyright: str = "") -> bool:
     db = get_db()
     if db is None:
         return False
@@ -19,6 +20,7 @@ def cache_apod(date_str: str, url: str, hdurl: str = "", title: str = "",
                 "title": title,
                 "explanation": explanation,
                 "media_type": media_type,
+                "copyright": copyright,
                 "source": "nasa",
                 "last_used_at": now,
             },
@@ -61,6 +63,7 @@ def get_apod_pool(limit: int = 30) -> list[dict]:
             "url": doc.get("hdurl") or doc.get("url"),
             "title": doc.get("title", ""),
             "date": doc.get("apod_date", ""),
+            "copyright": doc.get("copyright", ""),
         })
     return results
 

@@ -23,11 +23,14 @@ def init_auth(app):
         from firebase_admin import credentials
 
         cred_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+        project_id = os.environ.get("FIREBASE_PROJECT_ID")
         if cred_path and os.path.exists(cred_path):
             cred = credentials.Certificate(cred_path)
-            _firebase_app = firebase_admin.initialize_app(cred)
-        elif os.environ.get("FIREBASE_PROJECT_ID"):
-            _firebase_app = firebase_admin.initialize_app()
+            _firebase_app = firebase_admin.initialize_app(
+                cred, options={"projectId": project_id} if project_id else None
+            )
+        elif project_id:
+            _firebase_app = firebase_admin.initialize_app(options={"projectId": project_id})
         else:
             app.logger.warning("Firebase not configured — auth will reject all requests")
     except ImportError:
@@ -91,7 +94,8 @@ def init_auth(app):
             session["user"] = user
             _sync_user_to_db(user)
             return jsonify({"ok": True})
-        except Exception:
+        except Exception as e:
+            app.logger.warning(f"verify_id_token failed: {type(e).__name__}: {e}")
             return jsonify({"error": "Invalid or expired token"}), 401
 
     @app.route("/api/auth/signout", methods=["POST"])

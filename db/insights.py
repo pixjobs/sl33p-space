@@ -1,9 +1,23 @@
 from __future__ import annotations
 
+import re
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from db import get_db
+
+
+_NOTE_STOPWORDS = {
+    "the", "and", "but", "with", "from", "that", "this", "have", "had", "has",
+    "was", "were", "been", "being", "for", "out", "not", "did", "just", "than",
+    "then", "when", "what", "where", "would", "could", "should", "into", "very",
+    "some", "much", "more", "less", "really", "still", "also", "felt", "feel",
+    "feels", "got", "get", "got", "got", "night", "tonight", "morning", "today",
+    "yesterday", "kinda", "sort", "bit", "lot", "like", "about", "around", "over",
+    "down", "back", "after", "before", "again", "took", "take", "going", "went",
+    "kept", "made", "make", "thing", "things", "stuff",
+}
 
 
 def _round(value: Any, digits: int = 1):
@@ -13,6 +27,29 @@ def _round(value: Any, digits: int = 1):
         return round(float(value), digits)
     except (TypeError, ValueError):
         return None
+
+
+def _extract_note_keyword(notes: list[str]) -> dict | None:
+    """Return the most-mentioned content keyword across notes, if ≥3 mentions."""
+    if not notes:
+        return None
+    counter: Counter = Counter()
+    for note in notes:
+        if not note:
+            continue
+        tokens = re.findall(r"[a-zA-Z]{4,}", note.lower())
+        seen_in_note: set[str] = set()
+        for tok in tokens:
+            if tok in _NOTE_STOPWORDS or tok in seen_in_note:
+                continue
+            seen_in_note.add(tok)
+            counter[tok] += 1
+    if not counter:
+        return None
+    word, count = counter.most_common(1)[0]
+    if count < 3:
+        return None
+    return {"word": word, "count": count, "total": len(notes)}
 
 
 def _default_insights(user_id: str, reason: str = "not configured") -> dict:
@@ -36,6 +73,8 @@ def _default_insights(user_id: str, reason: str = "not configured") -> dict:
         "track_performance": [],
         "factor_correlations": [],
         "recent_pattern": [],
+        "recent_notes": [],
+        "note_pattern": None,
         "best_hour": None,
         "best_hour_rating": None,
         "current_streak": 0,
@@ -225,18 +264,35 @@ def get_user_sleep_insights(user_id: str, days: int = 30) -> dict:
         limit=7,
     ))
     recent_pattern = []
+    recent_notes: list[dict] = []
     for row in recent_rows:
         review = row.get("review") or {}
+        metrics = review.get("metrics") or {}
         created = row.get("created_at")
         if created and created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
+        date_iso = created.date().isoformat() if created else None
+        rating = review.get("rating")
+        energy = metrics.get("morning_energy")
+        note_text = (review.get("notes") or "").strip()
         recent_pattern.append({
-            "date": created.date().isoformat() if created else None,
+            "date": date_iso,
             "track": row.get("plan", {}).get("soundscape_title"),
             "mood": row.get("plan", {}).get("mood"),
-            "rating": review.get("rating"),
+            "rating": rating,
+            "morning_energy": energy,
             "duration_minutes": row.get("actual", {}).get("duration_minutes"),
         })
+        if note_text:
+            recent_notes.append({
+                "date": date_iso,
+                "rating": rating,
+                "energy": energy,
+                "note": note_text,
+            })
+
+    recent_notes = recent_notes[:5]
+    note_pattern = _extract_note_keyword([n["note"] for n in recent_notes])
 
     best_track = track_performance[0] if track_performance else None
     best_mood = mood_rows[0].get("_id") if mood_rows else None
@@ -291,6 +347,8 @@ def get_user_sleep_insights(user_id: str, days: int = 30) -> dict:
         "track_performance": track_performance,
         "factor_correlations": factor_correlations,
         "recent_pattern": recent_pattern,
+        "recent_notes": recent_notes,
+        "note_pattern": note_pattern,
         "best_hour": best_hour,
         "best_hour_rating": best_hour_rating,
         "current_streak": current_streak,

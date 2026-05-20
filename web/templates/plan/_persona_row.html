@@ -1,0 +1,7 @@
+<div class="persona-row" id="persona-row">
+  <button class="persona-pill{% if not persona %} active{% endif %}" data-persona="" onclick="setPersona(this)">Default</button>
+  <button class="persona-pill{% if persona == 'shift_worker' %} active{% endif %}" data-persona="shift_worker" onclick="setPersona(this)">&#9203; Shift</button>
+  <button class="persona-pill{% if persona == 'emergency_services' %} active{% endif %}" data-persona="emergency_services" onclick="setPersona(this)">&#9977; First Responder</button>
+  <button class="persona-pill{% if persona == 'shallow_sleeper' %} active{% endif %}" data-persona="shallow_sleeper" onclick="setPersona(this)">&#127769; Light Sleeper</button>
+  <button class="persona-pill{% if persona == 'insomniac' %} active{% endif %}" data-persona="insomniac" onclick="setPersona(this)">&#9789; Insomniac</button>
+</div>

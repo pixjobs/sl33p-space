@@ -116,17 +116,37 @@ async function loadRecentSessions() {
 
       li.appendChild(top);
 
-      // Factor tags (read-only display, tap row to edit)
-      if (factors.length > 0) {
-        var tagRow = document.createElement('div');
-        tagRow.className = 'recent-tags';
+      // Meta row: energy chip + factor tags (read-only display)
+      var metrics = review.metrics || {};
+      var energy = metrics.morning_energy;
+      if (energy || factors.length > 0) {
+        var metaRow = document.createElement('div');
+        metaRow.className = 'recent-meta';
+        if (energy) {
+          var enChip = document.createElement('span');
+          enChip.className = 'recent-energy-chip';
+          if (energy >= 4) enChip.classList.add('fresh');
+          else if (energy <= 2) enChip.classList.add('drained');
+          var enLbl = ['', 'drained', 'low', 'ok', 'good', 'fresh'][energy] || '';
+          enChip.textContent = '⏶ ' + enLbl;
+          metaRow.appendChild(enChip);
+        }
         factors.forEach(function(f) {
           var tag = document.createElement('span');
           tag.className = 'recent-tag';
           tag.textContent = f.replace(/_/g, ' ');
-          tagRow.appendChild(tag);
+          metaRow.appendChild(tag);
         });
-        li.appendChild(tagRow);
+        li.appendChild(metaRow);
+      }
+
+      // Note quote (if user wrote one)
+      var noteText = (review.notes || '').trim();
+      if (noteText) {
+        var noteEl = document.createElement('blockquote');
+        noteEl.className = 'recent-note';
+        noteEl.textContent = noteText;
+        li.appendChild(noteEl);
       }
 
       // Expandable factor editor (hidden by default)
@@ -419,12 +439,75 @@ var _reviewMetrics = {};
 function selectReviewRating(btn, rating) {
   _reviewRating = rating;
   document.querySelectorAll('#review-stars .review-star-btn').forEach(function(b) {
-    b.classList.toggle('active', parseInt(b.dataset.rating) === rating);
+    var r = parseInt(b.dataset.rating);
+    var on = r <= rating;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', r === rating ? 'true' : 'false');
+    var glyph = b.querySelector('.review-star-glyph');
+    if (glyph) glyph.textContent = on ? '★' : '☆';
   });
   var submit = document.getElementById('review-submit-btn');
   if (submit) submit.disabled = false;
+  var energyStep = document.getElementById('review-step-energy');
+  if (energyStep) energyStep.classList.remove('hidden');
+  var step2 = document.getElementById('review-step-2');
+  if (step2) step2.classList.remove('hidden');
+}
+
+function expandReviewPill() {
+  var pill = document.getElementById('review-pill');
+  var body = document.getElementById('review-pill-body');
+  var head = pill ? pill.querySelector('.review-pill-head') : null;
+  if (!pill || !body) return;
+  var open = pill.classList.toggle('expanded');
+  body.classList.toggle('hidden', !open);
+  if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function expandReviewDetail() {
   var detail = document.getElementById('review-detail');
-  if (detail) detail.classList.remove('hidden');
+  var toggle = document.getElementById('review-detail-toggle');
+  if (!detail) return;
+  var open = detail.classList.toggle('hidden');
+  if (toggle) toggle.classList.toggle('open', !open);
+}
+
+function expandReviewMore() {
+  var more = document.getElementById('review-more');
+  var toggle = document.getElementById('review-more-toggle');
+  if (!more) return;
+  var open = more.classList.toggle('hidden');
+  if (toggle) toggle.classList.toggle('open', !open);
+}
+
+function expandReviewNote() {
+  var note = document.getElementById('review-note');
+  var toggle = document.getElementById('review-note-toggle');
+  if (!note) return;
+  var hidden = note.classList.toggle('hidden');
+  if (toggle) toggle.classList.toggle('open', !hidden);
+  if (!hidden) {
+    var ta = document.getElementById('review-notes');
+    if (ta) setTimeout(function() { ta.focus(); }, 50);
+  }
+}
+
+function appendNotePrompt(btn) {
+  var ta = document.getElementById('review-notes');
+  if (!ta || !btn) return;
+  var text = btn.dataset.prompt || btn.textContent.trim();
+  var cur = ta.value.trim();
+  ta.value = cur ? cur.replace(/\.\s*$/, '') + '. ' + text + '.' : text + '.';
+  btn.classList.add('used');
+  ta.focus();
+  var submit = document.getElementById('review-submit-btn');
+  if (submit) submit.disabled = false;
+}
+
+function toggleInsightSection(id) {
+  var sec = document.getElementById(id);
+  if (!sec) return;
+  sec.classList.toggle('collapsed');
 }
 
 function selectMetric(key, btn, val) {
@@ -450,7 +533,7 @@ async function submitBannerReview(sid) {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   try {
     await api('/api/sleep/review', 'POST', { session_id: sid, rating: _reviewRating, factors: factors, metrics: metrics, notes: notes });
-    var banner = document.getElementById('review-banner');
+    var banner = document.getElementById('review-banner') || document.getElementById('review-pill');
     if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
     showToast('Review saved', 'success');
   } catch (e) {
@@ -651,29 +734,115 @@ function dismissAgentRec() {
 }
 
 // Load agent recommendation on page load
+function _el(tag, cls, txt) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (txt != null) e.textContent = txt;
+  return e;
+}
+
+function _renderAgentRec(data) {
+  var loading = document.getElementById('agent-rec-loading');
+  var content = document.getElementById('agent-rec-content');
+  var empty = document.getElementById('agent-rec-empty');
+  if (loading) loading.classList.add('hidden');
+
+  if (!data || !data.reasoning) {
+    if (empty) empty.classList.remove('hidden');
+    return;
+  }
+
+  _agentRec = data;
+
+  var vibe = document.getElementById('agent-vibe');
+  if (vibe) {
+    if (data.vibe) {
+      vibe.textContent = '“' + data.vibe + '”';
+      vibe.classList.remove('hidden');
+    } else {
+      vibe.classList.add('hidden');
+    }
+  }
+
+  var text = document.getElementById('agent-rec-text');
+  if (text) {
+    text.textContent = data.reasoning + (data.soundscape_title ? ' — ' + data.soundscape_title : '');
+  }
+
+  var arc = document.getElementById('agent-arc');
+  if (arc) {
+    arc.replaceChildren();
+    if (Array.isArray(data.playlist_arc) && data.playlist_arc.length) {
+      data.playlist_arc.forEach(function(t, i) {
+        if (i > 0) arc.appendChild(_el('span', 'agent-arc-arrow', '→'));
+        var step = _el('span', 'agent-arc-step');
+        step.appendChild(_el('span', 'agent-arc-role', (t.role || '').replace(/_/g, ' ')));
+        step.appendChild(_el('span', 'agent-arc-title', t.title || '?'));
+        arc.appendChild(step);
+      });
+      arc.classList.remove('hidden');
+    } else {
+      arc.classList.add('hidden');
+    }
+  }
+
+  var traceList = document.getElementById('agent-trace');
+  var traceToggle = document.getElementById('agent-trace-toggle');
+  if (traceList && traceToggle) {
+    traceList.replaceChildren();
+    if (Array.isArray(data.plan_trace) && data.plan_trace.length) {
+      data.plan_trace.forEach(function(s) {
+        var li = _el('li', 'agent-trace-step');
+        li.appendChild(_el('span', 'agent-trace-step-label', s.step || ''));
+        li.appendChild(_el('span', 'agent-trace-step-detail', s.detail || ''));
+        traceList.appendChild(li);
+      });
+      traceToggle.style.display = '';
+      var label = traceToggle.querySelector('.agent-trace-label');
+      if (label) label.textContent = 'How I picked this (' + data.plan_trace.length + ' steps)';
+    } else {
+      traceToggle.style.display = 'none';
+      traceList.classList.add('hidden');
+    }
+  }
+
+  var meta = document.getElementById('agent-meta');
+  if (meta) {
+    var bits = [];
+    if (data.predicted_outcome) bits.push(data.predicted_outcome);
+    if (typeof data.confidence === 'number') {
+      bits.push(Math.round(data.confidence * 100) + '% confidence');
+    }
+    if (data.source) bits.push(data.source === 'gemini' ? 'gemini 3' : 'mongodb only');
+    if (bits.length) {
+      meta.textContent = bits.join(' · ');
+      meta.classList.remove('hidden');
+    } else {
+      meta.classList.add('hidden');
+    }
+  }
+
+  if (content) content.classList.remove('hidden');
+}
+
+function toggleAgentTrace() {
+  var list = document.getElementById('agent-trace');
+  var toggle = document.getElementById('agent-trace-toggle');
+  if (!list || !toggle) return;
+  var open = !list.classList.contains('hidden');
+  list.classList.toggle('hidden', open);
+  toggle.classList.toggle('open', !open);
+}
+
 (function() {
   var recCard = document.getElementById('agent-card');
   if (!recCard) return;
   (async function() {
     try {
       var data = await api('/api/sleep/recommend', 'POST', { mood: _plan.mood || 'calm' });
-      var loading = document.getElementById('agent-rec-loading');
-      var content = document.getElementById('agent-rec-content');
-      var empty = document.getElementById('agent-rec-empty');
-      if (loading) loading.classList.add('hidden');
-      if (data && data.reasoning) {
-        _agentRec = data;
-        var text = document.getElementById('agent-rec-text');
-        if (text) text.textContent = data.reasoning + (data.soundscape_title ? ' — Try "' + data.soundscape_title + '"' : '');
-        if (content) content.classList.remove('hidden');
-      } else {
-        if (empty) empty.classList.remove('hidden');
-      }
+      _renderAgentRec(data);
     } catch (e) {
-      var loading = document.getElementById('agent-rec-loading');
-      var empty = document.getElementById('agent-rec-empty');
-      if (loading) loading.classList.add('hidden');
-      if (empty) empty.classList.remove('hidden');
+      _renderAgentRec(null);
     }
   })();
 })();
@@ -708,11 +877,26 @@ function useAgentPlan() {
       preload.onload = function() {
         bg.style.backgroundImage = 'url(' + img.url + ')';
         bg.classList.add('loaded');
+        _updateApodCredit(img);
       };
       preload.src = img.url;
     }
   }).catch(function() {});
 })();
+
+function _updateApodCredit(img) {
+  if (!img) return;
+  var box = document.getElementById('apod-credit');
+  var t = document.getElementById('apod-credit-title');
+  var m = document.getElementById('apod-credit-meta');
+  if (!box) return;
+  if (t) t.textContent = img.title || '';
+  if (m) {
+    var who = img.copyright ? String(img.copyright).replace(/\s+/g, ' ').trim() : 'Public Domain';
+    m.textContent = '© ' + who + ' · NASA APOD';
+  }
+  box.hidden = false;
+}
 
 // ───── Sound Lab Wizard ─────
 var _lab = { step: 1, theme: null, keywords: [], colour: null, apodTitle: '', apodExplanation: '' };

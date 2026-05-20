@@ -7,6 +7,10 @@ SERVICE="sl33p-space"
 REPO="sl33p-space"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/${SERVICE}"
 
+FIREBASE_API_KEY="AIzaSyCfkHf4gsBbaB8z1_r1Ox5l0Va-_Zy93G4"
+FIREBASE_APP_ID="1:309279270861:web:1ca1126bba32e16a434684"
+GCS_BUCKET="${GCS_BUCKET:-sl33p-space-music}"
+
 echo "=== sl33p-space deploy ==="
 echo "  Project:  ${PROJECT}"
 echo "  Region:   ${REGION}"

@@ -25,7 +25,7 @@ ENERGY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 def build_playlist(mood: str, persona: str | None, user_id: str,
                    session_id: str | None = None,
-                   max_tracks: int = 10,
+                   max_tracks: int = 20,
                    preferred_track_id: str | None = None) -> dict | None:
     """Build a mood-aware playlist for a sleep session.
 

@@ -7,6 +7,13 @@
 {% block content %}
 <div class="plan-bg-apod" id="plan-bg-apod"></div>
 
+<a class="apod-credit" id="apod-credit"
+   href="https://apod.nasa.gov/apod/" target="_blank" rel="noopener noreferrer"
+   title="Astronomy Picture of the Day" hidden>
+  <span class="apod-credit-title" id="apod-credit-title"></span>
+  <span class="apod-credit-meta" id="apod-credit-meta">NASA APOD</span>
+</a>
+
 {# ── Header: always visible ── #}
 <div class="plan-header">
   <div class="flex items-center gap-2">
@@ -54,7 +61,6 @@
 </div>
 {% endif %}
 
-{% include "plan/_review_banner.html" %}
 {% include "plan/_gift_banner.html" %}
 
 {# ── Tab bar ── #}
@@ -118,14 +124,9 @@
     </div>
   </div>
   {% endif %}
+  {% include "plan/_review_banner.html" %}
   {% include "plan/_agent_card.html" %}
-  <div class="flex gap-1.5 flex-wrap mb-3" id="persona-row">
-    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if not persona %} active{% endif %}" data-persona="" onclick="setPersona(this)">Default</button>
-    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'shift_worker' %} active{% endif %}" data-persona="shift_worker" onclick="setPersona(this)">&#9203; Shift</button>
-    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'emergency_services' %} active{% endif %}" data-persona="emergency_services" onclick="setPersona(this)">&#9977; First Responder</button>
-    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'shallow_sleeper' %} active{% endif %}" data-persona="shallow_sleeper" onclick="setPersona(this)">&#127769; Light Sleeper</button>
-    <button class="persona-pill px-2.5 py-1 bg-transparent border border-border rounded-full text-white/40 text-[0.65rem] cursor-pointer transition-colors hover:border-border-hover hover:text-white/60{% if persona == 'insomniac' %} active{% endif %}" data-persona="insomniac" onclick="setPersona(this)">&#9789; Insomniac</button>
-  </div>
+  {% include "plan/_persona_row.html" %}
   {% include "plan/_main_card.html" %}
 </div>
 
@@ -138,14 +139,6 @@
 
 {# ── Tab: Library ── #}
 <div class="tab-panel" id="panel-library">
-  {% if user_tier and user_tier.type != 'admin' %}
-  <div class="flex items-center justify-between px-1 py-2 mb-2 text-xs text-white/30">
-    <span>{{ user_tier.generations_remaining or 0 }} generation{{ 's' if user_tier.generations_remaining != 1 else '' }} remaining this month</span>
-    {% if user_tier.credits_balance and user_tier.credits_balance > 0 %}
-    <span class="text-white/20">{{ user_tier.credits_balance }} credits</span>
-    {% endif %}
-  </div>
-  {% endif %}
   {% include "plan/_sound_lab.html" %}
 </div>
 

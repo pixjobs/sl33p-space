@@ -10,10 +10,18 @@ log = logging.getLogger(__name__)
 
 
 def get_apod() -> dict | None:
+    def _shape(doc: dict) -> dict:
+        return {
+            "url": doc.get("hdurl") or doc.get("url"),
+            "title": doc.get("title", ""),
+            "explanation": doc.get("explanation", ""),
+            "copyright": doc.get("copyright", ""),
+        }
+
     today = date.today().isoformat()
     cached = get_cached_apod(today)
     if cached and cached.get("media_type") == "image":
-        return {"url": cached.get("hdurl") or cached.get("url"), "title": cached.get("title", ""), "explanation": cached.get("explanation", "")}
+        return _shape(cached)
 
     api_key = os.environ.get("NASA_API_KEY", "DEMO_KEY")
     try:
@@ -32,21 +40,22 @@ def get_apod() -> dict | None:
             title=data.get("title", ""),
             explanation=data.get("explanation", ""),
             media_type=data.get("media_type", "image"),
+            copyright=data.get("copyright", ""),
         )
 
         if data.get("media_type") != "image":
             fallback = get_latest_apod()
             if fallback:
-                return {"url": fallback.get("hdurl") or fallback.get("url"), "title": fallback.get("title", ""), "explanation": fallback.get("explanation", "")}
+                return _shape(fallback)
             return None
 
-        return {"url": data.get("hdurl") or data.get("url"), "title": data.get("title", ""), "explanation": data.get("explanation", "")}
+        return _shape(data)
 
     except Exception as e:
         log.warning("APOD fetch failed: %s", e)
         fallback = get_latest_apod()
         if fallback:
-            return {"url": fallback.get("hdurl") or fallback.get("url"), "title": fallback.get("title", ""), "explanation": fallback.get("explanation", "")}
+            return _shape(fallback)
         return None
 
 
@@ -76,6 +85,7 @@ def get_apod_collection(count: int = 20) -> list[dict]:
                 title=item.get("title", ""),
                 explanation=item.get("explanation", ""),
                 media_type="image",
+                copyright=item.get("copyright", ""),
             )
 
         pool = get_apod_pool(limit=count)

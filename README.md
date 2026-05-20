@@ -79,4 +79,4 @@ web/            Flask app, templates, static assets
 - **Key integration:** MongoDB MCP server gives the Gemini agent direct access to sleep session data, enabling natural language queries like "what helped me sleep best last week?" or "which tracks work when I'm stressed?"
 - **What makes it agentic:** The agent doesn't just answer questions — it reads your history, scores tracks, builds playlists, and adapts recommendations based on outcomes. The MCP tools let it reason over real user data rather than generic advice.
 
-[MIT](LICENSE)
+[Apache 2.0](LICENSE)

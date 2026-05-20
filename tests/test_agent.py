@@ -1,4 +1,4 @@
-"""Tests for agent consolidation: contextvars threading, get_recommendation, fallback logic."""
+"""Tests for agent consolidation: contextvars threading, deterministic helpers, get_recommendation."""
 
 import os
 import sys
@@ -67,11 +67,12 @@ def test_user_ctx_threadpool_isolation():
 
 
 # ---------------------------------------------------------------------------
-# 2. _fallback_recommendation — pure logic, no I/O
+# 2. _deterministic_pick — pure MongoDB logic, no LLM
 # ---------------------------------------------------------------------------
 
-def test_fallback_mood_match():
-    from agent.agent import _fallback_recommendation
+def test_deterministic_pick_mood_match():
+    """Mood match with >=2 sessions wins."""
+    from agent.agent import _deterministic_pick
 
     insights = {
         "best_track": None,
@@ -84,19 +85,18 @@ def test_fallback_mood_match():
     }
     plan = {"available_tracks": ["Ocean Waves", "Forest Rain"], "playlist_id": "pl-1"}
 
-    rec = _fallback_recommendation(insights, plan, mood="stressed")
+    title, reasoning = _deterministic_pick(insights, plan, mood="stressed")
 
-    assert rec["soundscape_title"] == "Ocean Waves"
-    assert "4.5" in rec["reasoning"]
-    assert "3 sessions" in rec["reasoning"]
-    assert "23:00" in rec["reasoning"]
-    assert "4-night" in rec["reasoning"]
-    assert rec["playlist_id"] == "pl-1"
+    assert title == "Ocean Waves"
+    assert "4.5" in reasoning
+    assert "3 sessions" in reasoning
+    assert "23:00" in reasoning
+    assert "4-night" in reasoning
 
 
-def test_fallback_mood_match_insufficient_sessions():
-    """If mood match has < 2 sessions, fall through to best_track."""
-    from agent.agent import _fallback_recommendation
+def test_deterministic_pick_insufficient_sessions_falls_to_best():
+    """Mood match with <2 sessions falls through to best_track."""
+    from agent.agent import _deterministic_pick
 
     insights = {
         "best_track": {"title": "Deep Hum", "avg_rating": 4.8},
@@ -108,15 +108,15 @@ def test_fallback_mood_match_insufficient_sessions():
     }
     plan = {"available_tracks": ["Buzz Cut", "Deep Hum"], "playlist_id": "pl-2"}
 
-    rec = _fallback_recommendation(insights, plan, mood="wired")
+    title, reasoning = _deterministic_pick(insights, plan, mood="wired")
 
-    assert rec["soundscape_title"] == "Deep Hum"
-    assert "4.8" in rec["reasoning"]
+    assert title == "Deep Hum"
+    assert "4.8" in reasoning
 
 
-def test_fallback_no_history():
-    """Brand-new user: no best_track, no matrix, just pick the first available track."""
-    from agent.agent import _fallback_recommendation
+def test_deterministic_pick_no_history():
+    """Brand-new user: no best_track, no matrix, just pick first available."""
+    from agent.agent import _deterministic_pick
 
     insights = {
         "best_track": None,
@@ -126,15 +126,15 @@ def test_fallback_no_history():
     }
     plan = {"available_tracks": ["Brown Noise"], "playlist_id": None}
 
-    rec = _fallback_recommendation(insights, plan, mood="calm")
+    title, reasoning = _deterministic_pick(insights, plan, mood="calm")
 
-    assert rec["soundscape_title"] == "Brown Noise"
-    assert "starting point" in rec["reasoning"].lower()
+    assert title == "Brown Noise"
+    assert "exploring" in reasoning.lower() or "clean start" in reasoning.lower()
 
 
-def test_fallback_empty_library():
-    """No tracks at all — title should be None, but no crash."""
-    from agent.agent import _fallback_recommendation
+def test_deterministic_pick_empty_library():
+    """No tracks at all — title should be None, no crash."""
+    from agent.agent import _deterministic_pick
 
     insights = {
         "best_track": None,
@@ -144,14 +144,14 @@ def test_fallback_empty_library():
     }
     plan = {"available_tracks": [], "playlist_id": None}
 
-    rec = _fallback_recommendation(insights, plan, mood="calm")
+    title, reasoning = _deterministic_pick(insights, plan, mood="calm")
 
-    assert rec["soundscape_title"] is None
-    assert "playlist_id" in rec
+    assert title is None
+    assert reasoning  # non-empty
 
 
-def test_fallback_best_hour_appended():
-    from agent.agent import _fallback_recommendation
+def test_deterministic_pick_best_hour_appended():
+    from agent.agent import _deterministic_pick
 
     insights = {
         "best_track": {"title": "X", "avg_rating": 3.0},
@@ -161,12 +161,12 @@ def test_fallback_best_hour_appended():
     }
     plan = {"available_tracks": [], "playlist_id": None}
 
-    rec = _fallback_recommendation(insights, plan, mood="calm")
-    assert "22:00" in rec["reasoning"]
+    _, reasoning = _deterministic_pick(insights, plan, mood="calm")
+    assert "22:00" in reasoning
 
 
-def test_fallback_streak_appended():
-    from agent.agent import _fallback_recommendation
+def test_deterministic_pick_streak_appended():
+    from agent.agent import _deterministic_pick
 
     insights = {
         "best_track": {"title": "X", "avg_rating": 3.0},
@@ -176,12 +176,104 @@ def test_fallback_streak_appended():
     }
     plan = {"available_tracks": [], "playlist_id": None}
 
-    rec = _fallback_recommendation(insights, plan, mood="calm")
-    assert "5-night streak" in rec["reasoning"]
+    _, reasoning = _deterministic_pick(insights, plan, mood="calm")
+    assert "5-night" in reasoning
 
 
 # ---------------------------------------------------------------------------
-# 3. get_recommendation — integration (mocked I/O)
+# 3. _build_plan_trace — reasoning trace from MongoDB data
+# ---------------------------------------------------------------------------
+
+def test_build_plan_trace_first_night():
+    """No reviewed sessions yet — trace should call it out and still produce steps."""
+    from agent.agent import _build_plan_trace
+
+    insights = {
+        "stats": {"reviewed_sessions": 0},
+        "mood_track_matrix": [],
+        "best_hour": None,
+    }
+    trace = _build_plan_trace(insights, [], mood="calm", chosen_title="Brown Noise")
+
+    assert any("First night" in s["detail"] or "no prior data" in s["detail"].lower()
+               for s in trace)
+    assert any("Selected" in s["step"] for s in trace)
+
+
+def test_build_plan_trace_mood_match_appears():
+    from agent.agent import _build_plan_trace
+
+    insights = {
+        "stats": {"reviewed_sessions": 5, "avg_rating": 4.2},
+        "mood_track_matrix": [
+            {"mood": "stressed", "track": "Ocean", "avg_rating": 4.6, "sessions": 3},
+        ],
+        "best_hour": 23,
+    }
+    playlist = [
+        {"title": "Ocean", "role": "settling"},
+        {"title": "Hum", "role": "transition"},
+        {"title": "Static", "role": "deep_sleep"},
+    ]
+    trace = _build_plan_trace(insights, playlist, mood="stressed", chosen_title="Ocean")
+
+    text = " ".join(s["step"] + " " + s["detail"] for s in trace)
+    assert "stressed" in text
+    assert "Ocean" in text
+    assert "23:00" in text
+    assert "settling" in text  # arc string
+    assert "Selected" in text
+
+
+def test_build_plan_trace_factor_warning():
+    """Challenging factor below 3.5 should generate a 'considered factors' step."""
+    from agent.agent import _build_plan_trace
+
+    insights = {
+        "stats": {"reviewed_sessions": 4, "avg_rating": 3.8},
+        "mood_track_matrix": [],
+        "challenging_factor": {"factor": "screen_time", "avg_rating": 2.9},
+        "best_hour": None,
+    }
+    trace = _build_plan_trace(insights, [], mood="calm", chosen_title="Hum")
+
+    assert any("Screen Time" in s["detail"] and "2.9" in s["detail"] for s in trace)
+
+
+# ---------------------------------------------------------------------------
+# 4. _predict_outcome
+# ---------------------------------------------------------------------------
+
+def test_predict_outcome_first_night():
+    from agent.agent import _predict_outcome
+    assert "First night" in _predict_outcome({}, "calm", None)
+
+
+def test_predict_outcome_mood_track_cell():
+    from agent.agent import _predict_outcome
+    insights = {
+        "mood_track_matrix": [
+            {"mood": "calm", "track": "Hum", "avg_rating": 4.4, "sessions": 5},
+        ],
+    }
+    out = _predict_outcome(insights, "calm", "Hum")
+    assert "4.4" in out
+    assert "5 similar" in out
+
+
+def test_predict_outcome_falls_back_to_track_average():
+    from agent.agent import _predict_outcome
+    insights = {
+        "mood_track_matrix": [],
+        "track_performance": [{"title": "Hum", "avg_rating": 3.9}],
+    }
+    out = _predict_outcome(insights, "calm", "Hum")
+    assert "3.9" in out
+    assert "new combination" in out.lower() or "exploring" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# 5. get_recommendation — integration (mocked I/O)
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
@@ -213,16 +305,22 @@ def _mock_db(monkeypatch):
     })
 
 
-def test_get_recommendation_fallback_without_api_key(_mock_db, monkeypatch):
-    """Without GOOGLE_API_KEY, get_recommendation should return the fallback."""
+def test_get_recommendation_deterministic_without_api_key(_mock_db, monkeypatch):
+    """Without GOOGLE_API_KEY, get_recommendation returns the deterministic plan."""
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
     from agent.agent import get_recommendation
     rec = get_recommendation("test-user", mood="calm")
 
+    assert rec["source"] == "deterministic"
     assert "soundscape_title" in rec
     assert "reasoning" in rec
-    assert "playlist_id" in rec
+    assert "plan_trace" in rec
+    assert isinstance(rec["plan_trace"], list)
+    assert "predicted_outcome" in rec
+    assert "confidence" in rec
+    assert "playlist_arc" in rec
+    assert rec["playlist_id"] == "mock-pl"
 
 
 def test_get_recommendation_sets_user_context(_mock_db, monkeypatch):
@@ -235,8 +333,18 @@ def test_get_recommendation_sets_user_context(_mock_db, monkeypatch):
     assert _get_user() == "uid-42"
 
 
+def test_get_recommendation_plan_trace_has_selected_step(_mock_db, monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    from agent.agent import get_recommendation
+    rec = get_recommendation("test-user", mood="calm")
+
+    steps = [s["step"] for s in rec["plan_trace"]]
+    assert any("Selected" in s for s in steps)
+
+
 def test_get_recommendation_gemini_error_falls_back(_mock_db, monkeypatch):
-    """If Gemini call raises, should fall back gracefully."""
+    """If Gemini call raises, should fall back to the deterministic plan."""
     monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
     import agent.agent as aa
     monkeypatch.setattr(aa, "_adk_available", True)
@@ -245,12 +353,13 @@ def test_get_recommendation_gemini_error_falls_back(_mock_db, monkeypatch):
     mock_genai.Client.return_value.models.generate_content.side_effect = RuntimeError("quota exceeded")
 
     with patch.dict("sys.modules", {"google.genai": mock_genai, "google": MagicMock()}):
-        # Need to reimport to pick up the mock
         from agent.agent import get_recommendation
         rec = get_recommendation("test-user", mood="calm")
 
-    assert "soundscape_title" in rec
-    assert "reasoning" in rec
+    # Falls back to deterministic — title and trace should still be present
+    assert rec["source"] == "deterministic"
+    assert rec["soundscape_title"]
+    assert rec["plan_trace"]
 
 
 def _make_genai_mock(response_text):
@@ -265,13 +374,15 @@ def _make_genai_mock(response_text):
 
 
 def test_get_recommendation_gemini_success(_mock_db, monkeypatch):
-    """If Gemini returns valid JSON, that becomes the recommendation."""
+    """Valid Gemini synthesis JSON populates vibe/reasoning/confidence; track stays deterministic."""
     monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
     import agent.agent as aa
     monkeypatch.setattr(aa, "_adk_available", True)
 
     mock_genai = _make_genai_mock(
-        '{"soundscape_title": "Rain Loop", "reasoning": "4.0 avg rating across 3 sessions"}'
+        '{"vibe": "midnight ocean to cathedral hush", '
+        '"reasoning": "Rain Loop averages 4.0/5 across 3 sessions.", '
+        '"confidence": 0.78}'
     )
 
     import sys
@@ -280,19 +391,24 @@ def test_get_recommendation_gemini_success(_mock_db, monkeypatch):
 
     rec = aa.get_recommendation("test-user", mood="calm")
 
+    # Track is chosen deterministically, not by LLM
     assert rec["soundscape_title"] == "Rain Loop"
+    # Synthesis fields come from Gemini
+    assert rec["vibe"] == "midnight ocean to cathedral hush"
     assert "4.0" in rec["reasoning"]
+    assert rec["confidence"] == 0.78
+    assert rec["source"] == "gemini"
     assert rec["playlist_id"] == "mock-pl"
 
 
-def test_get_recommendation_strips_markdown_fences(_mock_db, monkeypatch):
-    """Gemini sometimes wraps JSON in ```json ... ``` — should be stripped."""
+def test_get_recommendation_clamps_confidence(_mock_db, monkeypatch):
+    """Confidence values outside [0,1] should be clamped."""
     monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
     import agent.agent as aa
     monkeypatch.setattr(aa, "_adk_available", True)
 
     mock_genai = _make_genai_mock(
-        '```json\n{"soundscape_title": "Deep Hum", "reasoning": "great"}\n```'
+        '{"vibe": "soft drift", "reasoning": "ok", "confidence": 1.7}'
     )
 
     import sys
@@ -300,12 +416,11 @@ def test_get_recommendation_strips_markdown_fences(_mock_db, monkeypatch):
     monkeypatch.setitem(sys.modules, "google", MagicMock(genai=mock_genai))
 
     rec = aa.get_recommendation("test-user", mood="calm")
-
-    assert rec["soundscape_title"] == "Deep Hum"
+    assert rec["confidence"] == 1.0
 
 
 # ---------------------------------------------------------------------------
-# 4. Flask endpoint wiring
+# 6. Flask endpoint wiring
 # ---------------------------------------------------------------------------
 
 def test_recommend_endpoint_uses_agent(_mock_db, monkeypatch):
@@ -328,3 +443,4 @@ def test_recommend_endpoint_uses_agent(_mock_db, monkeypatch):
     data = resp.get_json()
     assert "soundscape_title" in data
     assert "reasoning" in data
+    assert "plan_trace" in data

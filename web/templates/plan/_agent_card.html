@@ -12,10 +12,18 @@
 
   <div class="agent-rec" id="agent-rec">
     <div class="agent-rec-loading" id="agent-rec-loading">
-      <span class="agent-rec-dots">Analysing your sleep data</span>
+      <span class="agent-rec-dots">Reading your MongoDB sleep data</span>
     </div>
     <div class="agent-rec-content hidden" id="agent-rec-content">
+      <p class="agent-vibe hidden" id="agent-vibe"></p>
       <p class="agent-rec-text" id="agent-rec-text"></p>
+      <div class="agent-arc hidden" id="agent-arc"></div>
+      <button class="agent-trace-toggle" id="agent-trace-toggle" type="button" onclick="toggleAgentTrace()">
+        <span class="agent-trace-caret">&rsaquo;</span>
+        <span class="agent-trace-label">How I picked this</span>
+      </button>
+      <ol class="agent-trace hidden" id="agent-trace"></ol>
+      <div class="agent-meta hidden" id="agent-meta"></div>
       <div class="agent-rec-actions">
         <button class="btn btn-sm btn-primary rounded-lg" id="agent-use-btn" onclick="useAgentPlan()">Use this plan</button>
         <button class="btn btn-sm btn-ghost rounded-lg" onclick="dismissAgentRec()">Dismiss</button>
