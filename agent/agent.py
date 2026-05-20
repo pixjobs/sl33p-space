@@ -169,7 +169,15 @@ def start_sleep_session(track_title: str = "", mood: str = "calm") -> dict:
     tracks = list_generated_music()
     persona = get_persona(uid)
 
-    playlist_data = build_playlist(mood, persona, uid)
+    preferred_id = None
+    if track_title:
+        for t in tracks:
+            if t["title"].lower() == track_title.lower():
+                preferred_id = t.get("id")
+                break
+
+    playlist_data = build_playlist(mood, persona, uid,
+                                   preferred_track_id=preferred_id)
     playlist_id = playlist_data.get("playlist_id") if playlist_data else None
 
     if playlist_data and playlist_data.get("tracks"):

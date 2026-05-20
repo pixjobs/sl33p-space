@@ -79,40 +79,73 @@
   margin-bottom: 1.5rem;
 }
 
-/* ───── Now Playing Strip ───── */
-.now-playing {
+/* ───── Soundscape Info ───── */
+.soundscape-info {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  border-radius: 1rem;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.06);
-  margin-bottom: 1rem;
-  max-width: 320px;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
 }
-.now-playing-role {
-  font-size: 0.55rem;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  color: rgba(255,255,255,0.3);
-  white-space: nowrap;
-}
-.now-playing-title {
-  font-size: 0.75rem;
-  color: rgba(255,255,255,0.6);
+.soundscape-title {
+  font-size: 0.95rem;
+  color: rgba(255, 245, 230, 0.7);
   font-weight: 500;
+  letter-spacing: 0.5px;
+  text-align: center;
+  max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
-  min-width: 0;
 }
-.now-playing-progress {
+.soundscape-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.mood-badge {
   font-size: 0.6rem;
-  color: rgba(255,255,255,0.2);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 0.2rem 0.6rem;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.mood-badge[data-mood="calm"]     { background: rgba(76, 175, 80, 0.15); color: rgba(76, 175, 80, 0.8); }
+.mood-badge[data-mood="tired"]    { background: rgba(100, 130, 200, 0.15); color: rgba(130, 160, 220, 0.8); }
+.mood-badge[data-mood="stressed"] { background: rgba(156, 100, 200, 0.15); color: rgba(180, 130, 220, 0.8); }
+.mood-badge[data-mood="restless"] { background: rgba(255, 160, 60, 0.15); color: rgba(255, 180, 100, 0.8); }
+.mood-badge[data-mood="wired"]    { background: rgba(60, 180, 200, 0.15); color: rgba(100, 200, 220, 0.8); }
+.energy-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.energy-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 0.3s;
+}
+.energy-dot.active {
+  background: rgba(255, 200, 120, 0.6);
+}
+.energy-label {
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.2);
+  margin-left: 0.25rem;
+}
+
+/* ───── Session Start ───── */
+.session-start {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.2);
+  letter-spacing: 0.5px;
+  margin-top: 0.5rem;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* ───── Waveform Visualiser ───── */
@@ -142,22 +175,6 @@
 
 @media (max-width: 640px) {
   .viz-container { width: 160px; height: 160px; }
-}
-
-/* ───── Timer Display ───── */
-.sleep-timer {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.25);
-}
-
-.timer-icon { font-weight: 300; }
-.timer-val {
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
-  font-variant-numeric: tabular-nums;
 }
 
 /* ───── Controls Bar ───── */
@@ -298,6 +315,20 @@
     <div class="sleep-clock" id="sleep-clock">00:00</div>
     <div class="sleep-clock-label"></div>
 
+    <!-- Soundscape Info -->
+    <div class="soundscape-info" id="soundscape-info">
+      <div class="soundscape-title" id="soundscape-title">Loading soundscape...</div>
+      <div class="soundscape-meta">
+        <span class="mood-badge" id="mood-badge" data-mood="{{ mood|default('calm') }}">{{ mood|default('calm') }}</span>
+        <div class="energy-dots" id="energy-dots">
+          <span class="energy-dot"></span>
+          <span class="energy-dot"></span>
+          <span class="energy-dot"></span>
+          <span class="energy-label" id="energy-label">low</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Telemetry Gauges -->
     <div class="sleep-telemetry">
       <div class="telemetry-gauge">
@@ -305,24 +336,17 @@
         <span class="gauge-label">Elapsed</span>
       </div>
       <div class="telemetry-gauge">
-        <div class="gauge-ring"><span class="gauge-value" id="tel-track">--</span></div>
-        <span class="gauge-label">Track</span>
+        <div class="gauge-ring"><span class="gauge-value" id="tel-remaining">--</span></div>
+        <span class="gauge-label">Remaining</span>
       </div>
       <div class="telemetry-gauge">
-        <div class="gauge-ring"><span class="gauge-value" id="tel-status">●</span></div>
-        <span class="gauge-label">Status</span>
+        <div class="gauge-ring"><span class="gauge-value" id="tel-volume">70%</span></div>
+        <span class="gauge-label">Volume</span>
       </div>
     </div>
 
     <!-- Status readout -->
     <div class="status-readout" id="status-readout">Soundscape active</div>
-
-    <!-- Now Playing Strip -->
-    <div class="now-playing" id="now-playing" style="display:none">
-      <div class="now-playing-role" id="np-role"></div>
-      <div class="now-playing-title" id="np-title"></div>
-      <div class="now-playing-progress" id="np-progress"></div>
-    </div>
 
     <!-- Waveform Visualiser + Breathing -->
     <div class="viz-container" id="viz-container">
@@ -330,28 +354,15 @@
       <div class="breath-text" id="breath-label">Breathe in</div>
     </div>
 
-    <!-- Sleep Timer -->
-    <div class="sleep-timer" id="sleep-timer" style="display:none">
-      <span class="timer-icon">⏱</span>
-      <span>Auto-end in</span>
-      <span class="timer-val" id="timer-value">--</span>
-    </div>
+    <!-- Session Start Time -->
+    <div class="session-start" id="session-start"></div>
   </div>
 
   <!-- Controls -->
   <div class="sleep-controls" id="sleep-controls">
     <div class="controls-inner">
-      <button class="ctrl-btn" id="ctrl-prev" onclick="immSkipPrev()" title="Previous track" style="display:none">
-        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"/><rect x="5" y="4" width="2" height="16"/></svg>
-      </button>
       <button class="ctrl-btn" id="ctrl-play" onclick="immTogglePlay()" title="Play/Pause">
         <svg id="ctrl-play-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      </button>
-      <button class="ctrl-btn" id="ctrl-next" onclick="immSkipNext()" title="Next track" style="display:none">
-        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="2" height="16"/></svg>
-      </button>
-      <button class="ctrl-btn" id="ctrl-loop" onclick="immToggleLoop()" title="Loop">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
       </button>
       <div class="ctrl-volume">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:0.4"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
@@ -434,6 +445,14 @@ function updateElapsed() {
     if (elapsed < 60) el.textContent = elapsed + 'm';
     else el.textContent = Math.floor(elapsed / 60) + 'h ' + (elapsed % 60) + 'm';
   }
+  // Update session start display if not yet shown
+  var startEl = document.getElementById('session-start');
+  if (startEl && !startEl.textContent) {
+    var startDate = new Date(_imm.elapsedStart);
+    var hh = startDate.getHours();
+    var mm = startDate.getMinutes();
+    startEl.textContent = 'Started at ' + (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+  }
   if (elapsedMs >= _MAX_SESSION_MS && !_imm._maxCutoffTriggered) {
     _imm._maxCutoffTriggered = true;
     _setStatus('Max session reached — ending');
@@ -457,6 +476,7 @@ var _needsGesture = false;
     updatePlayIcon(false);
     _audioReady = true;
     _needsGesture = false;
+    _errorRetries = 0;
     if (!_imm.elapsedStart) _imm.elapsedStart = Date.now();
     if (!_imm.sessionStart) _imm.sessionStart = new Date();
     _hideOverlay();
@@ -470,16 +490,38 @@ var _needsGesture = false;
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   });
 
+  var _errorRetries = 0;
+  var _maxErrorRetries = 2;
+
   audio.addEventListener('error', function() {
     var code = audio.error ? audio.error.code : '?';
     var msg = audio.error ? audio.error.message : '';
-    console.error('[audio] ERROR code=' + code, msg, audio.src.slice(-60));
+    console.error('[audio] ERROR code=' + code, msg, audio.src.slice(-60), 'retry=' + _errorRetries);
     if (_queueTrack._timeout) {
       clearTimeout(_queueTrack._timeout);
       _queueTrack._timeout = null;
     }
     _audioReady = false;
-    _setStatus('Audio error — try refreshing');
+
+    if (_errorRetries < _maxErrorRetries) {
+      _errorRetries++;
+      _setStatus('Audio interrupted — retrying (' + _errorRetries + ')...');
+      setTimeout(function() {
+        console.log('[audio] retry', _errorRetries, 'for track', _imm.playlistIndex);
+        _queueTrack(_imm.playlistIndex, true);
+      }, 3000);
+    } else if (!_imm.singleTrackMode && _imm.playlist.length > 1) {
+      _errorRetries = 0;
+      _setStatus('Skipping to next track...');
+      _imm.playlistIndex++;
+      if (_imm.playlistIndex >= _imm.playlist.length) _imm.playlistIndex = 0;
+      setTimeout(function() {
+        _queueTrack(_imm.playlistIndex, true);
+      }, 2000);
+    } else {
+      _errorRetries = 0;
+      _setStatus('Audio error — tap play to retry');
+    }
   });
 
   audio.addEventListener('ended', function() {
@@ -670,23 +712,18 @@ function _onFirstGesture() {
 }
 
 function _updateTrackDisplay(track, index) {
-  var total = _imm.playlist.length || 1;
-  var telTrack = document.getElementById('tel-track');
-  if (telTrack) telTrack.textContent = total > 1 ? (index + 1) + '/' + total : '--';
-  var np = document.getElementById('now-playing');
-  if (np && total > 1) {
-    np.style.display = '';
-    var role = track.role || 'deep_sleep';
-    var roleLabels = {settling:'Settling in', transition:'Transition', deep_sleep:'Deep sleep'};
-    document.getElementById('np-role').textContent = roleLabels[role] || role;
-    document.getElementById('np-title').textContent = track.title || 'Track ' + (index + 1);
-    document.getElementById('np-progress').textContent = (index + 1) + ' of ' + total;
+  var titleEl = document.getElementById('soundscape-title');
+  if (titleEl) titleEl.textContent = track.title || 'Untitled Soundscape';
+
+  var energyLevel = track.energy_level || 'low';
+  var dots = document.querySelectorAll('#energy-dots .energy-dot');
+  var levels = { low: 1, medium: 2, high: 3 };
+  var active = levels[energyLevel] || 1;
+  for (var i = 0; i < dots.length; i++) {
+    dots[i].classList.toggle('active', i < active);
   }
-  var statusEl = document.getElementById('status-readout');
-  if (statusEl && total > 1) {
-    var roleLabel = track.role === 'settling' ? 'Settling in' : track.role === 'transition' ? 'Transitioning' : 'Deep sleep';
-    statusEl.textContent = roleLabel + ' — ' + (track.title || 'Track ' + (index + 1));
-  }
+  var energyLabel = document.getElementById('energy-label');
+  if (energyLabel) energyLabel.textContent = energyLevel;
 }
 
 function _reportProgress() {
@@ -711,8 +748,8 @@ function _updateMediaSession() {
   });
   navigator.mediaSession.setActionHandler('play', function() { immTogglePlay(); });
   navigator.mediaSession.setActionHandler('pause', function() { immTogglePlay(); });
-  navigator.mediaSession.setActionHandler('previoustrack', function() { immSkipPrev(); });
-  navigator.mediaSession.setActionHandler('nexttrack', function() { immSkipNext(); });
+  try { navigator.mediaSession.setActionHandler('previoustrack', null); } catch(e) {}
+  try { navigator.mediaSession.setActionHandler('nexttrack', null); } catch(e) {}
   try { navigator.mediaSession.setActionHandler('seekbackward', function() {}); } catch(e) {}
   try { navigator.mediaSession.setActionHandler('seekforward', function() {}); } catch(e) {}
   var audio = document.getElementById('imm-audio');
@@ -732,25 +769,6 @@ function _updatePositionState() {
   } catch(e) {}
 }
 
-function immSkipNext() {
-  if (_imm.singleTrackMode || _imm.playlist.length <= 1) return;
-  _imm.playlistIndex++;
-  if (_imm.playlistIndex >= _imm.playlist.length) _imm.playlistIndex = 0;
-  _queueTrack(_imm.playlistIndex, true);
-  _reportProgress();
-}
-
-function immSkipPrev() {
-  if (_imm.singleTrackMode || _imm.playlist.length <= 1) return;
-  var audio = document.getElementById('imm-audio');
-  if (audio && audio.currentTime > 5) {
-    audio.currentTime = 0;
-    return;
-  }
-  _imm.playlistIndex--;
-  if (_imm.playlistIndex < 0) _imm.playlistIndex = _imm.playlist.length - 1;
-  _queueTrack(_imm.playlistIndex, true);
-}
 
 function _dismissOverlay() {
   _onFirstGesture();
@@ -824,19 +842,12 @@ function immTogglePlay() {
   }
 }
 
-function immToggleLoop() {
-  var audio = document.getElementById('imm-audio');
-  if (!audio) return;
-  // Don't allow loop toggle in multi-track mode (chaining handles repeating)
-  if (!_imm.singleTrackMode && _imm.playlist.length > 1) return;
-  audio.loop = !audio.loop;
-  var btn = document.getElementById('ctrl-loop');
-  if (btn) btn.classList.toggle('active', audio.loop);
-}
-
 function immSetVolume(val) {
   var audio = document.getElementById('imm-audio');
-  if (audio) audio.volume = parseInt(val) / 100;
+  var v = parseInt(val);
+  if (audio) audio.volume = v / 100;
+  var telVol = document.getElementById('tel-volume');
+  if (telVol) telVol.textContent = v + '%';
 }
 
 // ───── APOD Slideshow ─────
@@ -1072,41 +1083,40 @@ function stopBreathing() {
 }
 
 // ───── Sleep Timer ─────
+function _formatRemaining(ms) {
+  var mins = Math.floor(ms / 60000);
+  var secs = Math.floor((ms % 60000) / 1000);
+  var h = Math.floor(mins / 60);
+  var m = mins % 60;
+  if (h > 0) return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+  return m + ':' + (secs < 10 ? '0' : '') + secs;
+}
+
 function immSetTimer(minutes) {
-  var timerEl = document.getElementById('sleep-timer');
   if (_imm.timerInterval) clearInterval(_imm.timerInterval);
+
+  var gaugeEl = document.getElementById('tel-remaining');
 
   if (minutes <= 0) {
     _imm.timerMinutes = 0;
     _imm.timerEnd = null;
-    if (timerEl) timerEl.style.display = 'none';
+    if (gaugeEl) gaugeEl.textContent = '--';
     return;
   }
 
   _imm.timerMinutes = minutes;
   _imm.timerEnd = Date.now() + minutes * 60 * 1000;
-  if (timerEl) timerEl.style.display = '';
+  if (gaugeEl) gaugeEl.textContent = _formatRemaining(minutes * 60 * 1000);
 
   _imm.timerInterval = setInterval(function() {
     var remaining = Math.max(0, _imm.timerEnd - Date.now());
-    var valEl = document.getElementById('timer-value');
     if (remaining <= 0) {
       clearInterval(_imm.timerInterval);
-      if (valEl) valEl.textContent = '0:00';
+      if (gaugeEl) gaugeEl.textContent = '0:00';
       fadeOutAudio();
       return;
     }
-    var mins = Math.floor(remaining / 60000);
-    var secs = Math.floor((remaining % 60000) / 1000);
-    if (valEl) {
-      var h = Math.floor(mins / 60);
-      var m = mins % 60;
-      if (h > 0) {
-        valEl.textContent = h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
-      } else {
-        valEl.textContent = m + ':' + (secs < 10 ? '0' : '') + secs;
-      }
-    }
+    if (gaugeEl) gaugeEl.textContent = _formatRemaining(remaining);
   }, 1000);
 }
 
@@ -1305,7 +1315,6 @@ function _restorePlaybackState() {
 // Runs after app.js is loaded — api() is available here
 startBreathing();
 loadApodBackground();
-startSession();
 
 // Restore previous state if refreshed mid-session
 var _restored = _restorePlaybackState();
@@ -1314,12 +1323,40 @@ if (_restored && _restored.elapsedStart) {
   updateElapsed();
 }
 
+// Smart session initialization — check state before starting
+(async function initSession() {
+  if (_imm.sessionId) {
+    try {
+      var current = await api('/api/sleep/current');
+      if (current && current._id === _imm.sessionId) {
+        // Session is planned or active — safe to start/continue
+        if (current.status === 'planned') {
+          startSession();
+        } else {
+          // Already active (page reload) — just continue
+          console.log('[session] already active, continuing');
+          _imm.started = true;
+          if (!_imm.elapsedStart && current.actual && current.actual.started_at) {
+            _imm.elapsedStart = new Date(current.actual.started_at).getTime();
+            updateElapsed();
+          }
+        }
+      } else {
+        // Session not found as active — may have been ended/cleaned up
+        console.warn('[session] session', _imm.sessionId, 'not active on server');
+        _setStatus('Session recovered — audio continues');
+        _imm.started = true;
+      }
+    } catch (e) {
+      // API error — start anyway as best effort
+      startSession();
+    }
+  }
+})();
+
 initPlaylist().then(function() {
   var audio = document.getElementById('imm-audio');
   if (!_imm.singleTrackMode && _imm.playlist.length > 1) {
-    document.getElementById('ctrl-prev').style.display = '';
-    document.getElementById('ctrl-next').style.display = '';
-    document.getElementById('ctrl-loop').style.display = 'none';
     if (audio) audio.loop = false;
     console.log('[playlist] multi-track mode:', _imm.playlist.length, 'tracks, loop=false');
     if (_restored && _restored.trackIndex > 0 && _restored.trackIndex < _imm.playlist.length) {
@@ -1328,11 +1365,19 @@ initPlaylist().then(function() {
     }
   } else {
     if (audio) audio.loop = true;
-    document.getElementById('ctrl-loop').classList.add('active');
     console.log('[playlist] single-track/loop mode, loop=true');
   }
   requestWakeLock();
   if (!_imm.timerEnd) immSetTimer(_DEFAULT_TIMER_MIN);
+
+  // Set session start time display
+  if (_imm.elapsedStart) {
+    var startDate = new Date(_imm.elapsedStart);
+    var hh = startDate.getHours();
+    var mm = startDate.getMinutes();
+    var startEl = document.getElementById('session-start');
+    if (startEl) startEl.textContent = 'Started at ' + (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+  }
 });
 
 // Save playback state periodically
@@ -1355,10 +1400,6 @@ resetHideTimer();
 window.addEventListener('beforeunload', function() {
   _savePlaybackState();
   releaseWakeLock();
-  if (_imm.sessionId && _imm.started) {
-    var data = JSON.stringify({ session_id: _imm.sessionId });
-    navigator.sendBeacon('/api/sleep/end', new Blob([data], { type: 'application/json' }));
-  }
 });
 
 document.addEventListener('keydown', function(e) {
@@ -1367,10 +1408,6 @@ document.addEventListener('keydown', function(e) {
     immTogglePlay();
   } else if (e.key === 'Escape') {
     immEndSleep();
-  } else if (e.key === 'ArrowRight') {
-    immSkipNext();
-  } else if (e.key === 'ArrowLeft') {
-    immSkipPrev();
   }
 });
 </script>

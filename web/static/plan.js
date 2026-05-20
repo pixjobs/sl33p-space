@@ -333,6 +333,22 @@ async function startSleep() {
   var preview = document.getElementById('preview-audio');
   if (preview) preview.pause();
 
+  // Check for an existing active/planned session first to avoid duplicates
+  try {
+    var existing = await api('/api/sleep/current');
+    if (existing && existing._id) {
+      var params = new URLSearchParams();
+      params.set('session', existing._id);
+      if (existing.playlist_id) params.set('playlist', existing.playlist_id);
+      var ePlan = existing.plan || {};
+      if (ePlan.soundscape_src) params.set('track', ePlan.soundscape_src);
+      if (ePlan.soundscape_title) params.set('title', ePlan.soundscape_title);
+      params.set('mood', ePlan.mood || _plan.mood || 'calm');
+      window.location.href = '/sleep?' + params.toString();
+      return;
+    }
+  } catch (e) { /* no active session, proceed to create one */ }
+
   var track = _resolveTrack();
   var plan = {
     mood: _plan.mood || 'calm',

@@ -25,8 +25,14 @@ ENERGY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 def build_playlist(mood: str, persona: str | None, user_id: str,
                    session_id: str | None = None,
-                   max_tracks: int = 10) -> dict | None:
+                   max_tracks: int = 10,
+                   preferred_track_id: str | None = None) -> dict | None:
     """Build a mood-aware playlist for a sleep session.
+
+    Args:
+        preferred_track_id: If set, this track is pinned as the first track
+            (settling slot), overriding the default scoring order. Used when
+            the user explicitly picks a track or the agent recommends one.
 
     Returns:
         {
@@ -51,7 +57,8 @@ def build_playlist(mood: str, persona: str | None, user_id: str,
 
     scored.sort(key=lambda x: x[1], reverse=True)
 
-    selected = _select_arc(scored, count=min(max_tracks, len(scored)))
+    selected = _select_arc(scored, count=min(max_tracks, len(scored)),
+                           preferred_track_id=preferred_track_id)
     if not selected:
         return None
 
@@ -119,8 +126,13 @@ def _score_track(track: dict, mood: str, persona: str | None,
     return max(0, base + history_bonus + recency_penalty + persona_bonus + rating_bonus + owner_bonus)
 
 
-def _select_arc(scored: list[tuple], count: int = 5) -> list[tuple]:
-    """Select tracks following a settling -> transition -> deep_sleep arc."""
+def _select_arc(scored: list[tuple], count: int = 5,
+                preferred_track_id: str | None = None) -> list[tuple]:
+    """Select tracks following a settling -> transition -> deep_sleep arc.
+
+    If preferred_track_id is set, that track is pinned into the settling slot
+    regardless of its energy level or score.
+    """
     if not scored:
         return []
 
@@ -137,8 +149,12 @@ def _select_arc(scored: list[tuple], count: int = 5) -> list[tuple]:
     used = set()
     result = []
 
-    # Slot 1: settling — prefer medium/high energy
-    settling = _pick_by_energy(scored, {"high", "medium"}, used)
+    # Slot 1: settling — use preferred track if specified, else prefer medium/high energy
+    settling = None
+    if preferred_track_id:
+        settling = _pick_by_id(scored, preferred_track_id)
+    if not settling:
+        settling = _pick_by_energy(scored, {"high", "medium"}, used)
     if not settling:
         settling = _pick_best(scored, used)
     if settling:
@@ -167,6 +183,13 @@ def _select_arc(scored: list[tuple], count: int = 5) -> list[tuple]:
             used.add(track.get("track_id"))
 
     return result
+
+
+def _pick_by_id(scored: list[tuple], track_id: str):
+    for track, score in scored:
+        if track.get("track_id") == track_id:
+            return (track, score)
+    return None
 
 
 def _pick_by_energy(scored: list[tuple], energy_levels: set, used: set):

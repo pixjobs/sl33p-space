@@ -89,7 +89,16 @@ def start_session(session_id: str, track: str = None,
     if db is None:
         return False
     now = datetime.now(timezone.utc)
-    query = {"_id": ObjectId(session_id), "status": "planned"}
+    oid = ObjectId(session_id)
+
+    # Already active — idempotent on page reload
+    check_query = {"_id": oid, "status": "active"}
+    if user_id:
+        check_query["user_id"] = user_id
+    if db.sleep_sessions.count_documents(check_query, limit=1):
+        return True
+
+    query = {"_id": oid, "status": "planned"}
     if user_id:
         query["user_id"] = user_id
     result = db.sleep_sessions.update_one(

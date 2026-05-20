@@ -492,7 +492,9 @@ def create_app(agent_runner=None):
         if data.get("use_playlist", True):
             from audio.playlist import build_playlist
             persona = get_persona(uid)
-            playlist_data = build_playlist(mood, persona, uid)
+            user_track_id = data.get("soundscape_id")
+            playlist_data = build_playlist(mood, persona, uid,
+                                           preferred_track_id=user_track_id)
             if playlist_data:
                 playlist_id = playlist_data.get("playlist_id")
                 if playlist_data["tracks"]:
