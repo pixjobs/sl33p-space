@@ -8,7 +8,10 @@ window.__authReady = new Promise(function(r) { _authReadyResolve = r; });
 // Mobile detection — popups are unreliable on iOS Safari, mobile Chrome, in-app browsers,
 // and PWAs in standalone mode. Use redirect flow there.
 function _isMobileAuthEnv() {
-  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return true;
+  var ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod|Android/i.test(ua)) return true;
+  // iPadOS 13+ defaults to desktop UA (reports as Macintosh). Detect via touch.
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
   if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
   if (window.navigator.standalone) return true;  // iOS home-screen PWA
   return false;
