@@ -5,16 +5,33 @@ let _authToken = null;
 var _authReadyResolve;
 window.__authReady = new Promise(function(r) { _authReadyResolve = r; });
 
-// Mobile detection — popups are unreliable on iOS Safari, mobile Chrome, in-app browsers,
-// and PWAs in standalone mode. Use redirect flow there.
-function _isMobileAuthEnv() {
-  var ua = navigator.userAgent || '';
-  if (/iPhone|iPad|iPod|Android/i.test(ua)) return true;
-  // iPadOS 13+ defaults to desktop UA (reports as Macintosh). Detect via touch.
-  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return true;
-  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
-  if (window.navigator.standalone) return true;  // iOS home-screen PWA
+// Pages that require a signed-in user. If Firebase resolves to "no user" while we're
+// on one of these, we treat any Flask cookie as stale and bounce to the home page.
+var PROTECTED_PATH_PREFIXES = ['/plan', '/sleep', '/admin', '/library'];
+
+function _isProtectedPath(path) {
+  for (var i = 0; i < PROTECTED_PATH_PREFIXES.length; i++) {
+    if (path === PROTECTED_PATH_PREFIXES[i] || path.indexOf(PROTECTED_PATH_PREFIXES[i] + '/') === 0) return true;
+  }
   return false;
+}
+
+// Stale-token recovery: drop Firebase + Flask session and bounce to home so the user
+// can re-authenticate from a clean slate. Safe to call multiple times — guarded by a flag.
+var _stalePurgeInFlight = false;
+function _purgeStaleAuthAndRedirect(reason) {
+  if (_stalePurgeInFlight) return;
+  _stalePurgeInFlight = true;
+  try { sessionStorage.setItem('sl33p_auth_msg', reason || 'Session expired — please sign in again.'); } catch (_) {}
+  var firebaseSignOut = (window.firebase && firebase.auth) ? firebase.auth().signOut() : Promise.resolve();
+  var flaskSignOut = fetch('/api/auth/signout', { method: 'POST', credentials: 'same-origin' }).catch(function() {});
+  Promise.allSettled([firebaseSignOut, flaskSignOut]).then(function() {
+    if (_isProtectedPath(window.location.pathname)) {
+      window.location.replace('/');
+    } else {
+      _stalePurgeInFlight = false;
+    }
+  });
 }
 
 function _syncNavUI(user) {
@@ -60,6 +77,11 @@ if (window.__firebaseConfig) {
       _authToken = null;
       _syncNavUI(null);
       if (_authReadyResolve) { _authReadyResolve(); _authReadyResolve = null; }
+      // Firebase says "no user" but we're on a page that requires one — the Flask cookie
+      // must be stale (or the user signed out in another tab). Purge and bounce home.
+      if (_isProtectedPath(window.location.pathname)) {
+        _purgeStaleAuthAndRedirect('Signed out — please sign in again.');
+      }
       return;
     }
     user.getIdToken().then(function(token) {
@@ -107,21 +129,20 @@ if (window.__firebaseConfig) {
 function signInWithGoogle() {
   if (!window.__firebaseConfig) return;
   var provider = new firebase.auth.GoogleAuthProvider();
-  if (_isMobileAuthEnv()) {
-    firebase.auth().signInWithRedirect(provider).catch(function(err) {
-      showToast('Sign-in failed: ' + err.message, 'error');
-    });
-    return;
-  }
+  // Popup-first on every device. iOS Safari and PWAs can block popups; we fall back to
+  // redirect only when the browser explicitly refuses the popup.
   firebase.auth().signInWithPopup(provider).catch(function(err) {
-    // Popup blocked / closed by user — fall back to redirect.
-    if (err && (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request')) {
+    if (!err) return;
+    // User closed it themselves — stay silent.
+    if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
+    // Browser refused to open the popup — fall back to redirect.
+    if (err.code === 'auth/popup-blocked') {
       firebase.auth().signInWithRedirect(provider).catch(function(e2) {
-        showToast('Sign-in failed: ' + e2.message, 'error');
+        showToast('Sign-in failed: ' + (e2.message || e2.code), 'error');
       });
       return;
     }
-    showToast('Sign-in failed: ' + err.message, 'error');
+    showToast('Sign-in failed: ' + (err.message || err.code), 'error');
   });
 }
 
@@ -225,7 +246,9 @@ async function api(url, method, body) {
       res = await _send();
     }
     if (res.status === 401) {
-      showToast('Session expired. Please sign in again.', 'error');
+      // Refresh failed too — token is unrecoverable. Drop everything and send the user
+      // back to the sign-in page rather than leaving them on a broken interface.
+      _purgeStaleAuthAndRedirect('Your session expired — please sign in again.');
       return { error: 'Authentication required' };
     }
   }
@@ -243,6 +266,24 @@ async function api(url, method, body) {
   }
   return res.json();
 }
+
+// Show a session-expired notice after a stale-auth bounce. Runs as soon as the toast
+// container exists.
+(function _flushAuthMsg() {
+  function show() {
+    try {
+      var msg = sessionStorage.getItem('sl33p_auth_msg');
+      if (!msg) return;
+      sessionStorage.removeItem('sl33p_auth_msg');
+      if (document.getElementById('toast-container')) showToast(msg, 'info', 5000);
+    } catch (_) {}
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', show);
+  } else {
+    show();
+  }
+})();
 
 // ───── Toast Notifications ─────
 
