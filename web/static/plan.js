@@ -544,15 +544,19 @@ async function submitBannerReview(sid) {
 
 async function submitReview(sid, rating) {
   await api('/api/sleep/review', 'POST', { session_id: sid, rating: rating });
-  var banner = document.getElementById('review-banner');
-  if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
+  var pill = document.getElementById('review-banner') || document.getElementById('review-pill');
+  if (pill) { pill.style.opacity = '0'; setTimeout(function() { pill.remove(); }, 300); }
   showToast('Thanks!', 'success');
 }
 
 async function skipReview(sid) {
-  await api('/api/sleep/review', 'POST', { session_id: sid, skip: true });
-  var banner = document.getElementById('review-banner');
-  if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
+  try {
+    await api('/api/sleep/delete', 'POST', { session_id: sid });
+    var pill = document.getElementById('review-banner') || document.getElementById('review-pill');
+    if (pill) { pill.style.opacity = '0'; setTimeout(function() { pill.remove(); }, 300); }
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
 }
 
 // ───── Referral ─────
