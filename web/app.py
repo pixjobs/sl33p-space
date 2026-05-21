@@ -593,7 +593,7 @@ def create_app(agent_runner=None):
             end_session(sid, user_id=uid)
             from db import get_db
             db = get_db()
-            if db:
+            if db is not None:
                 from bson import ObjectId
                 ended = db.sleep_sessions.find_one({"_id": ObjectId(sid)})
                 dur = (ended or {}).get("actual", {}).get("duration_minutes", 0) or 0
