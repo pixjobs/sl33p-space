@@ -67,11 +67,20 @@
   {% if firebase_config %}
   <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-auth-compat.js"></script>
-  <script>window.__firebaseConfig = {{ firebase_config | tojson }};</script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    window.__firebaseConfig = {{ firebase_config | tojson }};
+    window.__googleClientId = {{ google_client_id | tojson }};
+  </script>
   {% else %}
   <script>window.__firebaseConfig = null;</script>
   {% endif %}
   <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='auth.js') }}"></script>
+  <script src="{{ url_for('static', filename='chat.js') }}"></script>
+  <script src="{{ url_for('static', filename='music.js') }}"></script>
+  <script src="{{ url_for('static', filename='player.js') }}"></script>
+  <script src="{{ url_for('static', filename='library.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

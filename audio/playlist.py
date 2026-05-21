@@ -141,9 +141,18 @@ def _select_arc(scored: list[tuple], count: int = 5,
         return [(track, score, "deep_sleep")]
 
     if len(scored) == 2:
+        first, second = scored[0], scored[1]
+        if preferred_track_id:
+            match = _pick_by_id(scored, preferred_track_id)
+            if match:
+                other = scored[1] if match[0] is scored[0][0] else scored[0]
+                return [
+                    (match[0], match[1], "settling"),
+                    (other[0], other[1], "deep_sleep"),
+                ]
         return [
-            (scored[0][0], scored[0][1], "settling"),
-            (scored[1][0], scored[1][1], "deep_sleep"),
+            (first[0], first[1], "settling"),
+            (second[0], second[1], "deep_sleep"),
         ]
 
     used = set()

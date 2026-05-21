@@ -5,7 +5,7 @@ import threading
 import time
 from collections import defaultdict
 from datetime import date, datetime
-from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, session, url_for
 from web.auth import init_auth, require_auth, require_login, require_admin, get_user_id, get_current_user, is_admin
 
 _agent_runner = None
@@ -132,7 +132,15 @@ def create_app(agent_runner=None):
             "appId": os.environ.get("FIREBASE_APP_ID", ""),
         }
         firebase_config = cfg if cfg["apiKey"] else None
-        return {"firebase_config": firebase_config, "is_admin": is_admin()}
+        google_client_id = os.environ.get(
+            "GOOGLE_CLIENT_ID",
+            "309279270861-hu91bpejr7uqg2nk7g8heoqko20aca1k.apps.googleusercontent.com",
+        )
+        return {
+            "firebase_config": firebase_config,
+            "google_client_id": google_client_id,
+            "is_admin": is_admin(),
+        }
 
     # ── Firebase auth proxy ──
     # Firebase's signInWithPopup/Redirect loads helper pages from authDomain.
@@ -179,6 +187,9 @@ def create_app(agent_runner=None):
 
     @app.route("/")
     def index():
+        if request.args.get("signed_out"):
+            session.pop("user", None)
+            return render_template("welcome.html")
         user = get_current_user()
         if user:
             return redirect(url_for("plan"))

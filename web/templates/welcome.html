@@ -130,6 +130,11 @@
 <script>
 (function() {
   var params = new URLSearchParams(window.location.search);
+  if (params.has('signed_out')) {
+    params.delete('signed_out');
+    var clean = params.toString();
+    history.replaceState(null, '', '/' + (clean ? '?' + clean : ''));
+  }
   var ref = params.get('ref');
   if (ref && ref.length >= 6) {
     localStorage.setItem('sl33p_ref', ref);

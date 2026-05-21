@@ -9,6 +9,7 @@ IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/${SERVICE}"
 
 FIREBASE_API_KEY="AIzaSyCfkHf4gsBbaB8z1_r1Ox5l0Va-_Zy93G4"
 FIREBASE_APP_ID="1:309279270861:web:1ca1126bba32e16a434684"
+GOOGLE_CLIENT_ID="309279270861-hu91bpejr7uqg2nk7g8heoqko20aca1k.apps.googleusercontent.com"
 GCS_BUCKET="${GCS_BUCKET:-sl33p-space-music}"
 
 echo "=== sl33p-space deploy ==="
@@ -76,7 +77,7 @@ gcloud run deploy "${SERVICE}" \
   --min-instances=0 \
   --max-instances=3 \
   --timeout=300 \
-  --update-env-vars="FIREBASE_PROJECT_ID=${PROJECT},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${PROJECT}.firebaseapp.com,FIREBASE_APP_ID=${FIREBASE_APP_ID},GCS_BUCKET=${GCS_BUCKET:-sl33p-space-music},SERVICE_URL=https://sl33p-space-lqs3sot4na-ew.a.run.app" \
+  --update-env-vars="FIREBASE_PROJECT_ID=${PROJECT},FIREBASE_API_KEY=${FIREBASE_API_KEY},FIREBASE_AUTH_DOMAIN=${PROJECT}.firebaseapp.com,FIREBASE_APP_ID=${FIREBASE_APP_ID},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},GCS_BUCKET=${GCS_BUCKET:-sl33p-space-music},SERVICE_URL=https://sl33p-space-lqs3sot4na-ew.a.run.app" \
   --update-secrets="GOOGLE_API_KEY=google-api-key:latest,MONGODB_URI=mongodb-uri:latest,FLASK_SECRET_KEY=flask-secret-key:latest,/tmp/sl33p-mongo-cert.pem=mongodb-cert:latest"
 
 # ── 4. Show URL ──
