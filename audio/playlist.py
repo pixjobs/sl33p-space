@@ -4,6 +4,9 @@ Playlist builder for sl33p-space.
 Builds mood-aware, persona-adapted playlists with a settling -> deep_sleep arc.
 Uses sleep history to learn what works for each user.
 """
+import logging
+
+logger = logging.getLogger(__name__)
 
 from datetime import datetime, timezone
 
@@ -43,7 +46,10 @@ def build_playlist(mood: str, persona: str | None, user_id: str,
         }
         or None if no tracks available.
     """
+    logger.info("[playlist] build_playlist mood=%s persona=%s preferred_track_id=%s user_id=%s",
+                mood, persona, preferred_track_id, user_id)
     pool = get_all_tracks(include_archived=False, user_id=user_id)
+    logger.info("[playlist] pool size=%d", len(pool))
     if not pool:
         return None
 
@@ -143,9 +149,10 @@ def _select_arc(scored: list[tuple], count: int = 5,
     if len(scored) == 2:
         first, second = scored[0], scored[1]
         if preferred_track_id:
-            match = _pick_by_id(scored, preferred_track_id)
+            match = _pick_by_id_or_log(scored, preferred_track_id, "settling")
             if match:
                 other = scored[1] if match[0] is scored[0][0] else scored[0]
+                logger.info("[playlist] 2-track arc: preferred '%s' → settling", preferred_track_id)
                 return [
                     (match[0], match[1], "settling"),
                     (other[0], other[1], "deep_sleep"),
@@ -161,11 +168,15 @@ def _select_arc(scored: list[tuple], count: int = 5,
     # Slot 1: settling — use preferred track if specified, else prefer medium/high energy
     settling = None
     if preferred_track_id:
-        settling = _pick_by_id(scored, preferred_track_id)
+        settling = _pick_by_id_or_log(scored, preferred_track_id, "settling")
     if not settling:
         settling = _pick_by_energy(scored, {"high", "medium"}, used)
     if not settling:
         settling = _pick_best(scored, used)
+    if settling:
+        logger.info("[playlist] settling slot: %s (score=%.3f, preferred=%s)",
+                     settling[0].get("title", "?"), settling[1],
+                     "yes" if preferred_track_id and settling[0].get("track_id") == preferred_track_id else "no")
     if settling:
         track, score = settling
         result.append((track, score, "settling"))
@@ -199,6 +210,19 @@ def _pick_by_id(scored: list[tuple], track_id: str):
         if track.get("track_id") == track_id:
             return (track, score)
     return None
+
+
+def _pick_by_id_or_log(scored: list[tuple], track_id: str, pref_role: str = "settling"):
+    """Like _pick_by_id but logs a warning if the preferred track is not found."""
+    match = _pick_by_id(scored, track_id)
+    if not match:
+        available_ids = [t.get("track_id") for t, s in scored]
+        logger.warning(
+            "preferred_track_id '%s' not found in %d scored tracks. "
+            "Available IDs: %s. Falling back to score-based selection for %s slot.",
+            track_id, len(scored), available_ids[:10], pref_role,
+        )
+    return match
 
 
 def _pick_by_energy(scored: list[tuple], energy_levels: set, used: set):

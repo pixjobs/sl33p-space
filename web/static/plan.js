@@ -336,8 +336,16 @@ function setPreviewVol(val) {
 
 // ───── Start sleep ─────
 function _resolveTrack() {
-  if (_plan.track) return _plan.track;
+  // Prefer the explicit track set by pickTrack() / useAgentPlan()
+  if (_plan.track && _plan.track.id) return _plan.track;
+  // Fall back to the visually-selected chip (marked with .active class)
   var chips = document.querySelectorAll('.track-chip');
+  for (var i = 0; i < chips.length; i++) {
+    if (chips[i].classList.contains('active')) {
+      return { id: chips[i].dataset.id, src: chips[i].dataset.src, title: chips[i].dataset.title };
+    }
+  }
+  // Last resort: first chip (should rarely happen)
   if (chips.length > 0) {
     var c = chips[0];
     return { id: c.dataset.id, src: c.dataset.src, title: c.dataset.title };
@@ -370,6 +378,8 @@ async function startSleep() {
   } catch (e) { /* no active session, proceed to create one */ }
 
   var track = _resolveTrack();
+  console.log('[sleep] _resolveTrack →', track ? track.title + ' (' + track.id + ')' : 'null',
+              '| _plan.track →', _plan.track ? _plan.track.title + ' (' + _plan.track.id + ')' : 'null');
   var plan = {
     mood: _plan.mood || 'calm',
     soundscape_title: track ? track.title : null,
