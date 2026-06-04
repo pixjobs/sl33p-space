@@ -358,7 +358,7 @@ function _resolveTrack() {
 async function startSleep() {
   var btn = document.getElementById('btn-start');
   btn.disabled = true;
-  btn.textContent = 'Composing your soundscape…';
+  btn.textContent = 'Starting your session…';
 
   var preview = document.getElementById('preview-audio');
   if (preview) preview.pause();

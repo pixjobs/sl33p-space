@@ -577,21 +577,11 @@ def create_app(agent_runner=None):
             resp = {"session_id": session_id}
             if playlist_data:
                 resp["playlist"] = playlist_data
-
-            # Compose the whole arc into ONE continuous, infinitely-looping
-            # source so overnight playback never depends on JS advancing tracks
-            # (which freezes when the phone locks). Best-effort: on failure the
-            # frontend falls back to the legacy multi-track playlist.
-            if playlist_data and playlist_data.get("tracks"):
-                from db.sessions import update_session_arc
-                from audio.music_gen import stitch_playlist_arc
-                arc = stitch_playlist_arc(playlist_data["tracks"], session_id)
-                if "error" not in arc:
-                    update_session_arc(session_id, arc)
-                    resp["arc_audio"] = arc
-                else:
-                    app.logger.info("arc stitch skipped for %s: %s",
-                                    session_id, arc.get("error"))
+            # NOTE: arc stitching is intentionally NOT done here — encoding +
+            # uploading a 30-min HLS arc inline took 75-100s and timed the
+            # request out (503). Overnight continuity is instead handled by the
+            # per-track infinite (12h) HLS manifests, so playback never cuts off.
+            # (Pre-rendering the arc can be moved to a Cloud Tasks worker later.)
             return jsonify(resp)
         return jsonify({"session_id": None, "status": "ok"})
 
