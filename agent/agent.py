@@ -9,7 +9,9 @@ still works without an API key during development.
 import contextvars
 import json
 import os
+import shutil
 import sys
+import time
 from typing import Optional
 
 from agent.prompts import ROOT_PROMPT, PERSONA_CONTEXTS
@@ -580,6 +582,16 @@ def _get_verify_runner():
     try:
         from agent.mcp_loader import load_mcp_tools
         config = _load_agent_config()
+        # If the MCP server's launcher (e.g. npx) isn't installed, don't even
+        # try — a missing binary otherwise stalls the ADK turn for 10s+ and
+        # spams errors on every call.
+        for srv in config.get("mcp", {}).get("servers", []):
+            if srv.get("enabled", True) and srv.get("type", "stdio") == "stdio":
+                cmd = srv.get("command", "")
+                if cmd and shutil.which(cmd) is None:
+                    print(f"[mcp-verify] '{cmd}' not found — MCP verification disabled",
+                          file=sys.stderr)
+                    return None
         mcp_tools = load_mcp_tools(config)
         if not mcp_tools:
             return None
@@ -638,13 +650,23 @@ def _parse_verify_text(text: str) -> tuple:
     return None, 0
 
 
+_verify_cache: dict = {}
+_VERIFY_TTL = 900  # seconds — avoid re-querying the same pairing every page load
+
+
 def _verify_with_mcp(user_id: str, chosen_track: str, mood: str,
                      timeout: float = 8.0) -> dict:
     """Run one MCP-backed verification turn. Returns {} (mcp_used False) on any
-    failure so callers can fall back to deterministic data without breaking."""
+    failure so callers can fall back to deterministic data without breaking.
+    Results are cached per (user, mood, track) for a few minutes."""
     runner = _get_verify_runner()
     if runner is None or not chosen_track:
         return {"mcp_used": False}
+
+    cache_key = (user_id, mood, chosen_track)
+    hit = _verify_cache.get(cache_key)
+    if hit and (time.monotonic() - hit[0]) < _VERIFY_TTL:
+        return hit[1]
 
     import asyncio
 
@@ -685,13 +707,15 @@ def _verify_with_mcp(user_id: str, chosen_track: str, mood: str,
         return {"mcp_used": False}
 
     avg, cnt = _parse_verify_text(" ".join(captured["text"]))
-    return {
+    result = {
         "mcp_used": True,
         "mcp_tool": captured["tool"],
         "mcp_query": captured["query"],
         "avg_rating": avg,
         "sessions_count": cnt,
     }
+    _verify_cache[cache_key] = (time.monotonic(), result)
+    return result
 
 
 def get_recommendation(user_id: str, mood: str = "calm") -> dict:
@@ -715,24 +739,9 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
     plan_trace = _build_plan_trace(insights, playlist_preview, mood, title)
     predicted_outcome = _predict_outcome(insights, mood, title)
 
-    # Verify the pick against the live database through the MongoDB MCP server,
-    # and surface that step (real tool + query) in the trace.
-    mcp_verify = _verify_with_mcp(user_id, title or "", mood)
-    if mcp_verify.get("mcp_used"):
-        avg = mcp_verify.get("avg_rating")
-        cnt = mcp_verify.get("sessions_count") or 0
-        if avg is not None and cnt:
-            detail = f"{avg}/5 across {cnt} matching nights — confirms the pick"
-        elif cnt:
-            detail = f"{cnt} matching nights found in the live database"
-        else:
-            detail = "no prior nights for this pairing — flagged as exploration"
-        plan_trace.append({
-            "step": "Verified against MongoDB (MCP)",
-            "detail": detail,
-            "mcp_tool": mcp_verify.get("mcp_tool"),
-            "mcp_query": mcp_verify.get("mcp_query"),
-        })
+    # NOTE: the MongoDB MCP verification is deliberately NOT run here — it would
+    # block the page load for seconds. The frontend fires /api/agent/verify
+    # after render and fills the verify step in live. See _verify_with_mcp.
 
     base = {
         "soundscape_title": title,
@@ -741,10 +750,10 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
         "predicted_outcome": predicted_outcome,
         "confidence": 0.6 if title else 0.2,
         "plan_trace": plan_trace,
-        "mcp_verification": mcp_verify,
         "available_tracks": plan.get("available_tracks", []),
+        "mood": mood,
         "mission": _build_mission(insights, playlist_preview, mood, title,
-                                  predicted_outcome, mcp_verify, memories),
+                                  predicted_outcome, {}, memories),
         "playlist_id": plan.get("playlist_id"),
         "playlist_arc": [
             {"title": t.get("title"), "role": t.get("role")}

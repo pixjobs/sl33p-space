@@ -548,6 +548,8 @@ async function submitBannerReview(sid) {
     var banner = document.getElementById('review-banner') || document.getElementById('review-pill');
     if (banner) { banner.style.opacity = '0'; setTimeout(function() { banner.remove(); }, 300); }
     showToast('Review saved', 'success');
+    // The coach reflects the just-reviewed night — refresh its check-in + experiment.
+    if (typeof refreshCoach === 'function') refreshCoach();
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
     showToast('Error: ' + e.message, 'error');
@@ -566,6 +568,8 @@ async function skipReview(sid) {
     await api('/api/sleep/delete', 'POST', { session_id: sid });
     var pill = document.getElementById('review-banner') || document.getElementById('review-pill');
     if (pill) { pill.style.opacity = '0'; setTimeout(function() { pill.remove(); }, 300); }
+    // The coach strip references the pending review — refresh it so it clears.
+    if (typeof refreshCoach === 'function') refreshCoach();
   } catch (e) {
     showToast('Error: ' + e.message, 'error');
   }
@@ -787,6 +791,10 @@ function _renderAgentRec(data) {
 
   _renderMission(data.mission || []);
 
+  // Fill the live MongoDB MCP verification step after render (off the
+  // page-load path, so the page never hangs on the MCP turn).
+  if (data.soundscape_title) _runMcpVerify(data.soundscape_title, data.mood || 'calm');
+
   var ring = document.getElementById('agent-conf-ring');
   if (ring) _renderConfidenceRing(ring, data.confidence);
 
@@ -816,29 +824,63 @@ function _renderMission(steps) {
   ol.classList.remove('hidden');
 
   steps.forEach(function(s, i) {
-    var li = _el('li', 'mission-step status-' + (s.status || 'done'));
-    if (s.mcp_tool) li.classList.add('is-mcp');
+    var li = _missionStepEl(s);
     li.style.setProperty('--i', i);
-
-    var icon = _el('span', 'mission-icon');
-    li.appendChild(icon);
-
-    var body = _el('span', 'mission-body');
-    var head = _el('span', 'mission-title', s.title || '');
-    if (s.tool === 'MongoDB' || s.mcp_tool) {
-      var badge = _el('span', 'agent-trace-mcp-badge', s.mcp_tool ? 'MCP' : 'MongoDB');
-      if (s.mcp_query) badge.title = s.mcp_tool + ' — ' + s.mcp_query;
-      head.appendChild(badge);
-    }
-    body.appendChild(head);
-    if (s.detail) body.appendChild(_el('span', 'mission-detail', s.detail));
-    if (s.mcp_query) body.appendChild(_el('span', 'agent-trace-mcp-query', s.mcp_query));
-    li.appendChild(body);
     ol.appendChild(li);
-
     // Sequential reveal for the "watch it work" feel.
     setTimeout(function() { li.classList.add('revealed'); }, 160 * i + 80);
   });
+}
+
+// Build one mission step <li>. Reused for live updates (e.g. MCP verify).
+function _missionStepEl(s) {
+  var li = _el('li', 'mission-step status-' + (s.status || 'done'));
+  if (s.mcp_tool) li.classList.add('is-mcp');
+  if (s.key) li.dataset.key = s.key;
+  li.appendChild(_el('span', 'mission-icon'));
+  var body = _el('span', 'mission-body');
+  var head = _el('span', 'mission-title', s.title || '');
+  if (s.tool === 'MongoDB' || s.mcp_tool) {
+    var badge = _el('span', 'agent-trace-mcp-badge', s.mcp_tool ? 'MCP' : 'MongoDB');
+    if (s.mcp_query) badge.title = s.mcp_tool + ' — ' + s.mcp_query;
+    head.appendChild(badge);
+  }
+  body.appendChild(head);
+  if (s.detail) body.appendChild(_el('span', 'mission-detail', s.detail));
+  if (s.mcp_query) body.appendChild(_el('span', 'agent-trace-mcp-query', s.mcp_query));
+  li.appendChild(body);
+  return li;
+}
+
+// Live MongoDB MCP verification: show a "verifying" step, then fill it in (or
+// drop it if MCP isn't available, e.g. locally without the MCP server).
+function _runMcpVerify(track, mood) {
+  var ol = document.getElementById('agent-mission');
+  if (!ol) return;
+  var pending = _missionStepEl({
+    key: 'verify', status: 'pending',
+    title: 'Verifying against MongoDB (MCP)…',
+    detail: 'Querying the live database',
+  });
+  pending.classList.add('revealed');
+  // Insert right after the history-analysis step.
+  var first = ol.querySelector('.mission-step[data-key="analyse"]') || ol.firstChild;
+  if (first && first.nextSibling) ol.insertBefore(pending, first.nextSibling);
+  else ol.appendChild(pending);
+
+  api('/api/agent/verify', 'POST', { track: track, mood: mood }).then(function(v) {
+    if (!v || !v.mcp_used) { pending.remove(); return; }
+    var avg = v.avg_rating, cnt = v.sessions_count || 0;
+    var detail = (avg != null && cnt) ? (avg + '/5 across ' + cnt + ' matching nights — confirms the pick')
+               : (cnt ? (cnt + ' matching nights in the live database')
+                      : 'no prior nights for this pairing — flagged as exploration');
+    var done = _missionStepEl({
+      key: 'verify', status: 'done', mcp_tool: v.mcp_tool, mcp_query: v.mcp_query,
+      title: 'Verified against MongoDB', detail: detail,
+    });
+    done.classList.add('revealed');
+    ol.replaceChild(done, pending);
+  }).catch(function() { pending.remove(); });
 }
 
 function _renderConfidenceRing(el, confidence) {

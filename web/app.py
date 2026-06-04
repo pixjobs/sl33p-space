@@ -499,6 +499,20 @@ def create_app(agent_runner=None):
         rec = get_recommendation(uid, mood)
         return jsonify(rec)
 
+    @app.route("/api/agent/verify", methods=["POST"])
+    @require_auth
+    @rate_limit(max_calls=20, window_seconds=60)
+    def api_agent_verify():
+        # Off the page-load critical path: the /plan mission fires this after
+        # render to fill in the live MongoDB MCP verification step.
+        from agent.agent import _verify_with_mcp
+        data = request.get_json(force=True)
+        track = (data or {}).get("track", "")
+        mood = (data or {}).get("mood", "calm")
+        if not track:
+            return jsonify({"mcp_used": False})
+        return jsonify(_verify_with_mcp(get_user_id(), track, mood))
+
     @app.route("/api/sleep/log", methods=["POST"])
     @require_auth
     def api_sleep_log():
