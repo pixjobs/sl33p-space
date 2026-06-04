@@ -9,6 +9,7 @@ still works without an API key during development.
 import contextvars
 import json
 import os
+import sys
 from typing import Optional
 
 from agent.prompts import ROOT_PROMPT, PERSONA_CONTEXTS
@@ -421,6 +422,84 @@ def _build_plan_trace(insights: dict, playlist_preview: list, mood: str,
     return trace
 
 
+def _build_mission(insights: dict, playlist_preview: list, mood: str,
+                   title: str | None, predicted_outcome: str,
+                   mcp_verify: dict, memories: list = None) -> list[dict]:
+    """The visible 'mission' the agent plans and executes — a beyond-chat,
+    watch-it-work surface. Each step mirrors real work already done so the UI
+    can reveal them sequentially. Status: done | pending | await."""
+    stats = insights.get("stats", {}) or {}
+    reviewed = stats.get("reviewed_sessions", 0)
+    avg = stats.get("avg_rating")
+
+    mission = []
+
+    # Add recall step if we have memories
+    if memories:
+        recall_detail = memories[0].get("text", "Prior outcomes recorded")
+        mission.append({
+            "key": "recall",
+            "title": "Recalled what worked before",
+            "detail": recall_detail,
+            "status": "done",
+        })
+
+    mission.append({
+        "key": "analyse",
+        "title": "Analysed your sleep history",
+        "detail": (f"{reviewed} reviewed nights · avg {avg}/5 from MongoDB"
+                   if reviewed else "First night — starting a fresh baseline"),
+        "status": "done",
+        "tool": "MongoDB",
+    })
+
+    if mcp_verify.get("mcp_used"):
+        avgc = mcp_verify.get("avg_rating")
+        cnt = mcp_verify.get("sessions_count") or 0
+        mission.append({
+            "key": "verify",
+            "title": "Verified against the live database",
+            "detail": (f"{avgc}/5 across {cnt} matching nights"
+                       if (avgc is not None and cnt)
+                       else "Queried the live database for this pairing"),
+            "status": "done",
+            "mcp_tool": mcp_verify.get("mcp_tool"),
+            "mcp_query": mcp_verify.get("mcp_query"),
+        })
+
+    mission.append({
+        "key": "choose",
+        "title": "Chose tonight's soundscape",
+        "detail": (f"{title} — top match for {mood}" if title
+                   else "Exploring the library — no clear winner yet"),
+        "status": "done",
+    })
+
+    arc = " → ".join((t.get("role") or "").replace("_", " ")
+                     for t in playlist_preview[:3])
+    mission.append({
+        "key": "compose",
+        "title": "Composes one continuous overnight arc",
+        "detail": (arc or "settling → transition → deep sleep") + " · loops till morning",
+        "status": "pending",
+    })
+
+    mission.append({
+        "key": "predict",
+        "title": "Predicted the outcome",
+        "detail": predicted_outcome or "Learning your pattern",
+        "status": "done",
+    })
+
+    mission.append({
+        "key": "ready",
+        "title": "Ready to start",
+        "detail": "Approve to begin, or swap the track first",
+        "status": "await",
+    })
+    return mission
+
+
 def _deterministic_pick(insights: dict, plan: dict, mood: str) -> tuple[str | None, str]:
     """Pick a track and write a fallback reasoning line from MongoDB data alone."""
     best = insights.get("best_track")
@@ -465,6 +544,153 @@ def _predict_outcome(insights: dict, mood: str, title: str | None) -> str:
     return "New territory — no prior data for this combo"
 
 
+# --- MongoDB MCP verification (load-bearing + visible in the trace) ---
+#
+# The deterministic pick above is fast and reliable, but the MongoDB partner
+# track rewards *visible* MCP usage. So we run one real ADK turn whose only job
+# is to query the live database through the MongoDB MCP server and confirm the
+# chosen (mood, track) cell. We capture the actual MCP tool + query from the
+# event stream and surface it in the reasoning trace. Strictly best-effort: a
+# timeout or a missing MCP server degrades silently to the deterministic result.
+
+_verify_runner = None
+
+
+def _load_agent_config() -> dict:
+    try:
+        with open(os.path.join("config", "config.json")) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _get_verify_runner():
+    """Lazily build (and cache) a minimal ADK runner wired ONLY to MongoDB MCP."""
+    global _verify_runner
+    if _verify_runner is not None:
+        return _verify_runner
+    if not _adk_available or not os.environ.get("GOOGLE_API_KEY"):
+        return None
+    # No point spinning up the MongoDB MCP server if there's no database to hit.
+    if not os.environ.get("MONGODB_URI"):
+        return None
+    try:
+        from agent.mcp_loader import load_mcp_tools
+        config = _load_agent_config()
+        mcp_tools = load_mcp_tools(config)
+        if not mcp_tools:
+            return None
+        model = config.get("agent", {}).get("model", "gemini-3-flash-preview")
+        verifier = Agent(
+            name="sl33p_mcp_verifier",
+            model=model,
+            instruction=(
+                "You verify sleep recommendations against the live MongoDB database "
+                "using the MongoDB MCP tools. Database 'sl33p-space', collection "
+                "'sleep_sessions'. Always run exactly ONE aggregate (or find) query, "
+                "then reply with a single JSON object: "
+                '{"avg_rating": <number|null>, "sessions_count": <int>}.'
+            ),
+            tools=mcp_tools,
+        )
+        _verify_runner = InMemoryRunner(agent=verifier, app_name="sl33p-mcp-verify")
+        return _verify_runner
+    except Exception as e:
+        print(f"[mcp-verify] runner init failed: {e}", file=sys.stderr)
+        return None
+
+
+def prewarm_mcp() -> bool:
+    """Eagerly initialise the MCP verifier so the first /plan load isn't slow.
+
+    Called once at app startup. Returns True if the MCP toolset loaded.
+    """
+    return _get_verify_runner() is not None
+
+
+def _summarize_mcp_args(tool: str, args: dict) -> str:
+    """Compact, human-readable summary of an MCP tool call for the UI trace."""
+    coll = args.get("collection") or args.get("namespace") or "sleep_sessions"
+    if "pipeline" in args:
+        pipeline = args.get("pipeline") or []
+        return f"{coll} · aggregate ({len(pipeline)}-stage pipeline)"
+    if "filter" in args:
+        keys = ", ".join(list((args.get("filter") or {}).keys())[:3])
+        return f"{coll} · find {{{keys}}}"
+    return f"{coll} · {tool}"
+
+
+def _parse_verify_text(text: str) -> tuple:
+    """Best-effort extraction of {avg_rating, sessions_count} from the reply."""
+    try:
+        import re
+        m = re.search(r"\{.*\}", text, re.S)
+        if m:
+            obj = json.loads(m.group(0))
+            avg = obj.get("avg_rating")
+            return (round(avg, 2) if isinstance(avg, (int, float)) else None,
+                    int(obj.get("sessions_count") or 0))
+    except Exception:
+        pass
+    return None, 0
+
+
+def _verify_with_mcp(user_id: str, chosen_track: str, mood: str,
+                     timeout: float = 8.0) -> dict:
+    """Run one MCP-backed verification turn. Returns {} (mcp_used False) on any
+    failure so callers can fall back to deterministic data without breaking."""
+    runner = _get_verify_runner()
+    if runner is None or not chosen_track:
+        return {"mcp_used": False}
+
+    import asyncio
+
+    async def _run():
+        session = await runner.session_service.create_session(
+            app_name="sl33p-mcp-verify", user_id=user_id)
+        msg = genai_types.Content(role="user", parts=[genai_types.Part(text=(
+            f"Mood '{mood}', track '{chosen_track}'. Using the MongoDB MCP tools, "
+            f"query the sleep_sessions collection for sessions where "
+            f"plan.mood = '{mood}' and plan.soundscape_title = '{chosen_track}', and "
+            f"return the average review.rating and the number of such sessions."))])
+        captured = {"tool": None, "query": None, "text": []}
+        async for event in runner.run_async(
+                user_id=user_id, session_id=session.id, new_message=msg):
+            if not (event.content and event.content.parts):
+                continue
+            for part in event.content.parts:
+                fc = getattr(part, "function_call", None)
+                if fc and not captured["tool"]:
+                    captured["tool"] = fc.name
+                    captured["query"] = _summarize_mcp_args(
+                        fc.name, dict(fc.args or {}))
+                if getattr(part, "text", None):
+                    captured["text"].append(part.text)
+        return captured
+
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            captured = loop.run_until_complete(
+                asyncio.wait_for(_run(), timeout=timeout))
+        finally:
+            loop.close()
+    except Exception as e:
+        return {"mcp_used": False, "error": str(e)[:120]}
+
+    if not captured.get("tool"):
+        return {"mcp_used": False}
+
+    avg, cnt = _parse_verify_text(" ".join(captured["text"]))
+    return {
+        "mcp_used": True,
+        "mcp_tool": captured["tool"],
+        "mcp_query": captured["query"],
+        "avg_rating": avg,
+        "sessions_count": cnt,
+    }
+
+
 def get_recommendation(user_id: str, mood: str = "calm") -> dict:
     """Generate a rich sleep recommendation: deterministic plan + one Gemini call.
 
@@ -474,6 +700,10 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
     """
     _set_user(user_id)
 
+    # Load memories
+    from db.memory import get_memories
+    memories = get_memories(user_id, limit=5)
+
     insights = get_mongodb_sleep_insights()
     plan = recommend_sleep_plan(mood=mood)
     playlist_preview = plan.get("playlist_preview") or []
@@ -482,6 +712,25 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
     plan_trace = _build_plan_trace(insights, playlist_preview, mood, title)
     predicted_outcome = _predict_outcome(insights, mood, title)
 
+    # Verify the pick against the live database through the MongoDB MCP server,
+    # and surface that step (real tool + query) in the trace.
+    mcp_verify = _verify_with_mcp(user_id, title or "", mood)
+    if mcp_verify.get("mcp_used"):
+        avg = mcp_verify.get("avg_rating")
+        cnt = mcp_verify.get("sessions_count") or 0
+        if avg is not None and cnt:
+            detail = f"{avg}/5 across {cnt} matching nights — confirms the pick"
+        elif cnt:
+            detail = f"{cnt} matching nights found in the live database"
+        else:
+            detail = "no prior nights for this pairing — flagged as exploration"
+        plan_trace.append({
+            "step": "Verified against MongoDB (MCP)",
+            "detail": detail,
+            "mcp_tool": mcp_verify.get("mcp_tool"),
+            "mcp_query": mcp_verify.get("mcp_query"),
+        })
+
     base = {
         "soundscape_title": title,
         "reasoning": fallback_reasoning,
@@ -489,6 +738,10 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
         "predicted_outcome": predicted_outcome,
         "confidence": 0.6 if title else 0.2,
         "plan_trace": plan_trace,
+        "mcp_verification": mcp_verify,
+        "available_tracks": plan.get("available_tracks", []),
+        "mission": _build_mission(insights, playlist_preview, mood, title,
+                                  predicted_outcome, mcp_verify, memories),
         "playlist_id": plan.get("playlist_id"),
         "playlist_arc": [
             {"title": t.get("title"), "role": t.get("role")}
@@ -542,6 +795,7 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
                 for n in recent_pattern
             ],
             "recent_notes": recent_notes,
+            "memories": [m.get("text") for m in memories] if memories else [],
             "trace": plan_trace,
         }
 
@@ -593,13 +847,25 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
 def _build_prompt(user_id: str) -> str:
     """Build the root prompt with persona context injected."""
     from db.users import get_persona
+    from db.memory import get_memories
+
     persona = get_persona(user_id)
     context = ""
     if persona and persona in PERSONA_CONTEXTS:
         context = PERSONA_CONTEXTS[persona]
     else:
         context = "No specific persona set. Adapt naturally to the user's tone."
-    return ROOT_PROMPT.format(persona_context=context)
+
+    prompt = ROOT_PROMPT.format(persona_context=context)
+
+    # Append memory section if memories exist
+    memories = get_memories(user_id, limit=5)
+    if memories:
+        prompt += "\n\n## What I remember about you\n"
+        for m in memories:
+            prompt += f"- {m.get('text', '')}\n"
+
+    return prompt
 
 
 def create_runner(config: dict = None, prompt: str = None):

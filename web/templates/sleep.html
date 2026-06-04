@@ -517,6 +517,7 @@ var _imm = {
   mood: '{{ mood|default("calm") }}',
   playlist: [],
   playlistIndex: 0,
+  arcAudio: null,
   singleTrackMode: false,
   timerMinutes: 0,
   timerEnd: null,
@@ -694,13 +695,24 @@ function _resolveTrackSrc(track) {
   return track.src || track.gcs_url || '';
 }
 
+// The continuous overnight arc: one source, looped forever at the OS layer.
+function _resolveArcSrc(arc) {
+  if (!arc) return '';
+  if (_isSafari && arc.hls_url) return arc.hls_url;
+  return arc.stitched_ogg_url || '';
+}
+
 // Queue: set src and wait for canplay
 function _queueTrack(index, autoplay) {
   var audio = document.getElementById('imm-audio');
   if (!audio) return;
   var track, src;
 
-  if (_imm.playlist.length > 0) {
+  // Arc mode: a single continuous, self-looping source — no per-track chaining.
+  if (_imm.arcAudio) {
+    src = _resolveArcSrc(_imm.arcAudio);
+    track = { title: _imm.trackTitle || 'Continuous sleep arc' };
+  } else if (_imm.playlist.length > 0) {
     track = _imm.playlist[index];
     if (!track) return;
     src = _resolveTrackSrc(track);
@@ -727,9 +739,13 @@ function _queueTrack(index, autoplay) {
     _queueTrack._pendingHandler = null;
   }
 
-  // HLS extended manifests already loop for ~8h — don't use audio.loop
+  // Arc mode loops forever at the OS layer (survives screen lock). For legacy
+  // multi-track playlists, HLS advances via the long manifest while OGG chains
+  // on the `ended` event, so only single-track playlists set audio.loop.
   var isHLS = src && src.indexOf('.m3u8') !== -1;
-  if (isHLS) {
+  if (_imm.arcAudio) {
+    audio.loop = true;
+  } else if (isHLS) {
     audio.loop = false;
   } else {
     audio.loop = (_imm.singleTrackMode || _imm.playlist.length <= 1);
@@ -934,8 +950,16 @@ async function initPlaylist() {
   var audio = document.getElementById('imm-audio');
   if (!audio) return;
 
-  console.log('[playlist] init — playlistId:', _imm.playlistId, 'trackSrc:', _imm.trackSrc ? _imm.trackSrc.slice(-40) : 'none');
-  _setStatus('Loading playlist...');
+  console.log('[playlist] init — playlistId:', _imm.playlistId, 'arc:', !!_imm.arcAudio, 'trackSrc:', _imm.trackSrc ? _imm.trackSrc.slice(-40) : 'none');
+  _setStatus('Loading soundscape...');
+
+  // Preferred path: one continuous, self-looping overnight arc.
+  if (_imm.arcAudio && _resolveArcSrc(_imm.arcAudio)) {
+    console.log('[playlist] arc mode — continuous source, loop forever');
+    _imm.singleTrackMode = true;
+    _queueTrack(0, true);
+    return;
+  }
 
   if (_imm.playlistId) {
     try {
@@ -1466,6 +1490,7 @@ document.addEventListener('visibilitychange', function() {
   } else {
     _exitBackgroundLoop();
     requestWakeLock();
+    _resyncFromServer();
     _updateMediaSession();
     _updatePositionState();
   }
@@ -1526,6 +1551,7 @@ function _savePlaybackState() {
       trackIndex: _imm.playlistIndex,
       trackSrc: _imm.trackSrc,
       trackTitle: _imm.trackTitle,
+      arcAudio: _imm.arcAudio,
       elapsedStart: _imm.elapsedStart,
       ts: Date.now()
     }));
@@ -1553,49 +1579,70 @@ function _restorePlaybackState() {
 startBreathing();
 loadApodBackground();
 
-// Restore previous state if refreshed mid-session
+// Fast paint from sessionStorage (instant), then reconcile against the server.
 var _restored = _restorePlaybackState();
-if (_restored && _restored.elapsedStart) {
-  _imm.elapsedStart = _restored.elapsedStart;
+if (_restored) {
+  if (_restored.elapsedStart) _imm.elapsedStart = _restored.elapsedStart;
+  if (_restored.arcAudio && !_imm.arcAudio) _imm.arcAudio = _restored.arcAudio;
   updateElapsed();
 }
 
-// Smart session initialization — check state before starting
-(async function initSession() {
-  if (_imm.sessionId) {
-    try {
-      var current = await api('/api/sleep/current');
-      if (current && current._id === _imm.sessionId) {
-        // Session is planned or active — safe to start/continue
-        if (current.status === 'planned') {
-          startSession();
-        } else {
-          // Already active (page reload) — just continue
-          console.log('[session] already active, continuing');
-          _imm.started = true;
-          if (!_imm.elapsedStart && current.actual && current.actual.started_at) {
-            _imm.elapsedStart = new Date(current.actual.started_at).getTime();
-            updateElapsed();
-          }
-        }
-      } else {
-        // Session not found as active — may have been ended/cleaned up
-        console.warn('[session] session', _imm.sessionId, 'not active on server');
-        _setStatus('Session recovered — audio continues');
-        _imm.started = true;
-      }
-    } catch (e) {
-      // API error — start anyway as best effort
-      startSession();
+// Apply the elapsed clock from a server session doc (authoritative source).
+function _applyServerElapsed(session) {
+  if (session && session.actual && session.actual.started_at) {
+    var serverStart = new Date(session.actual.started_at).getTime();
+    if (serverStart && serverStart !== _imm.elapsedStart) {
+      _imm.elapsedStart = serverStart;
+      updateElapsed();
     }
   }
-})();
+}
 
-initPlaylist().then(function() {
+// Smarter session recovery: the server is the source of truth. The continuous
+// arc keeps playing at the OS layer while the screen is locked, so on reopen we
+// only need to (1) re-anchor the elapsed clock to the real start time, (2) pull
+// the arc audio if we don't have it, and (3) resume playback if it was paused —
+// never silently restart the clock or kill audio that's still going.
+async function _bootSession() {
+  var current = null;
+  if (_imm.sessionId) {
+    try {
+      current = await api('/api/sleep/current');
+    } catch (e) {
+      console.warn('[session] /current failed, best-effort start', e);
+    }
+  }
+
+  if (current && current.arc_audio && !_imm.arcAudio) {
+    _imm.arcAudio = current.arc_audio;
+  }
+
+  if (current && current._id === _imm.sessionId) {
+    if (current.status === 'planned') {
+      startSession();
+    } else {
+      console.log('[session] active — resuming, anchoring clock to server start');
+      _imm.started = true;
+      _applyServerElapsed(current);
+    }
+  } else if (_imm.sessionId) {
+    // Server has no live session (auto-completed while we were away). Don't
+    // crash: keep the arc audible and let the user end/review when ready.
+    console.warn('[session]', _imm.sessionId, 'not live on server — recovered mode');
+    _imm.started = true;
+    if (_restored && _restored.elapsedStart) _applyServerElapsed(current);
+    _setStatus('Welcome back — audio still playing');
+  }
+
+  await initPlaylist();
+
   var audio = document.getElementById('imm-audio');
-  if (!_imm.singleTrackMode && _imm.playlist.length > 1) {
+  if (_imm.arcAudio) {
+    if (audio) audio.loop = true;
+    console.log('[playlist] arc mode — continuous, loop=true');
+  } else if (!_imm.singleTrackMode && _imm.playlist.length > 1) {
     if (audio) audio.loop = false;
-    console.log('[playlist] multi-track mode:', _imm.playlist.length, 'tracks, loop=false');
+    console.log('[playlist] multi-track mode:', _imm.playlist.length, 'tracks');
     if (_restored && _restored.trackIndex > 0 && _restored.trackIndex < _imm.playlist.length) {
       _imm.playlistIndex = _restored.trackIndex;
       _queueTrack(_restored.trackIndex, true);
@@ -1604,10 +1651,10 @@ initPlaylist().then(function() {
     if (audio) audio.loop = true;
     console.log('[playlist] single-track/loop mode, loop=true');
   }
+
   requestWakeLock();
   if (!_imm.timerEnd) immSetTimer(_DEFAULT_TIMER_MIN);
 
-  // Set session start time display
   if (_imm.elapsedStart) {
     var startDate = new Date(_imm.elapsedStart);
     var hh = startDate.getHours();
@@ -1615,7 +1662,23 @@ initPlaylist().then(function() {
     var startEl = document.getElementById('session-start');
     if (startEl) startEl.textContent = 'Started at ' + (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
   }
-});
+}
+
+// On returning to the foreground, re-anchor the clock to the server and make
+// sure audio is actually playing (it may have been suspended by the OS).
+async function _resyncFromServer() {
+  if (!_imm.sessionId) return;
+  try {
+    var current = await api('/api/sleep/current');
+    if (current && current._id === _imm.sessionId) _applyServerElapsed(current);
+  } catch (e) {}
+  var audio = document.getElementById('imm-audio');
+  if (audio && audio.paused && _imm.started && !_imm._maxCutoffTriggered) {
+    audio.play().catch(function() {});
+  }
+}
+
+_bootSession();
 
 // Save playback state periodically
 setInterval(_savePlaybackState, 10000);

@@ -16,17 +16,17 @@
     </div>
     <div class="agent-rec-content hidden" id="agent-rec-content">
       <p class="agent-vibe hidden" id="agent-vibe"></p>
+      <p class="mission-caption" id="agent-mission-caption">Tonight's mission</p>
+      <ol class="mission" id="agent-mission"></ol>
       <p class="agent-rec-text" id="agent-rec-text"></p>
-      <div class="agent-arc hidden" id="agent-arc"></div>
-      <button class="agent-trace-toggle" id="agent-trace-toggle" type="button" onclick="toggleAgentTrace()">
-        <span class="agent-trace-caret">&rsaquo;</span>
-        <span class="agent-trace-label">How I picked this</span>
-      </button>
-      <ol class="agent-trace hidden" id="agent-trace"></ol>
-      <div class="agent-meta hidden" id="agent-meta"></div>
+      <div class="agent-outcome">
+        <div class="conf-ring" id="agent-conf-ring" title="Confidence"></div>
+        <div class="agent-meta hidden" id="agent-meta"></div>
+      </div>
       <div class="agent-rec-actions">
-        <button class="btn btn-sm btn-primary rounded-lg" id="agent-use-btn" onclick="useAgentPlan()">Use this plan</button>
-        <button class="btn btn-sm btn-ghost rounded-lg" onclick="dismissAgentRec()">Dismiss</button>
+        <button class="btn btn-sm btn-primary rounded-lg" id="agent-use-btn" onclick="useAgentPlan()">Approve &amp; start</button>
+        <button class="btn btn-sm btn-ghost rounded-lg" id="agent-swap-btn" onclick="swapAgentTrack()">Swap track</button>
+        <button class="btn btn-sm btn-ghost rounded-lg" onclick="regenerateAgentPlan()">Regenerate</button>
       </div>
     </div>
     <div class="agent-rec-empty hidden" id="agent-rec-empty">

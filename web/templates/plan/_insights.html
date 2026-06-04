@@ -104,11 +104,16 @@
         {% if insights.recent_pattern %}
         <div class="insight-subsection">
           <div class="insight-sub-label">Last {{ insights.recent_pattern | length }} nights</div>
-          <div class="insight-pattern-row">
+          <div class="insight-pattern-grid">
             {% for night in insights.recent_pattern | reverse %}
-            <div class="insight-pattern-dot {% if night.rating and night.rating >= 4 %}good{% elif night.rating and night.rating >= 3 %}mid{% elif night.rating %}bad{% else %}skip{% endif %}"
-                 title="{{ night.date or '?' }} · {{ night.track or '?' }} · {{ night.rating or 'unrated' }}/5">
-              {% if night.rating %}{{ night.rating }}{% else %}-{% endif %}
+            <div class="insight-pattern-cell {% if night.rating and night.rating >= 4 %}rating-high{% elif night.rating and night.rating >= 3 %}rating-mid{% elif night.rating %}rating-low{% else %}rating-none{% endif %}"
+                 title="{{ night.date or '?' }} · {{ night.track or '?' }} · {{ night.rating or 'unrated' }}/5{% if night.mood %} · {{ night.mood }}{% endif %}">
+              <div class="insight-pattern-cell-inner">
+                <span class="insight-pattern-rating">{% if night.rating %}{{ night.rating }}{% else %}-{% endif %}</span>
+                {% if night.mood %}
+                <span class="insight-pattern-mood-dot mood-{{ night.mood }}" title="{{ night.mood }}"></span>
+                {% endif %}
+              </div>
             </div>
             {% endfor %}
           </div>
@@ -161,9 +166,12 @@
           <div class="insight-matrix">
             {% for combo in insights.mood_track_matrix[:5] %}
             <div class="insight-matrix-row">
-              <span class="insight-matrix-mood">{{ combo.mood }}</span>
+              <span class="insight-matrix-mood mood-{{ combo.mood }}">
+                <span class="insight-matrix-mood-dot mood-{{ combo.mood }}"></span>
+                <span>{{ combo.mood }}</span>
+              </span>
               <span class="insight-matrix-track">{{ combo.track }}</span>
-              <span class="insight-matrix-score">{{ combo.avg_rating }}</span>
+              <span class="insight-matrix-score {% if combo.avg_rating >= 4 %}score-high{% elif combo.avg_rating >= 3 %}score-mid{% else %}score-low{% endif %}">{{ combo.avg_rating }}</span>
               <span class="insight-matrix-count">{{ combo.sessions }}x</span>
             </div>
             {% endfor %}

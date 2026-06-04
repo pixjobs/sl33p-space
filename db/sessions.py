@@ -68,6 +68,7 @@ def create_session(user_id: str, plan: dict,
         "status": "planned",
         "plan": plan,
         "playlist_id": playlist_id,
+        "arc_audio": None,
         "actual": {
             "started_at": None,
             "ended_at": None,
@@ -148,6 +149,18 @@ def update_tracks_played(session_id: str, count: int) -> bool:
     db.sleep_sessions.update_one(
         {"_id": ObjectId(session_id)},
         {"$set": {"actual.tracks_played": count, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return True
+
+
+def update_session_arc(session_id: str, arc_data: dict) -> bool:
+    """Store the stitched continuous-arc audio URLs on a session."""
+    db = get_db()
+    if db is None:
+        return False
+    db.sleep_sessions.update_one(
+        {"_id": ObjectId(session_id)},
+        {"$set": {"arc_audio": arc_data, "updated_at": datetime.now(timezone.utc)}},
     )
     return True
 

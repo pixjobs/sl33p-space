@@ -114,11 +114,21 @@ _VARIATION_HINTS = [
 ]
 
 
-def _convert_to_hls(ogg_path: str, track_id: str, loop_hours: int = 8) -> str | None:
+def _convert_to_hls(ogg_path: str, track_id: str, loop_hours: int = 8,
+                    infinite: bool = True) -> str | None:
     """Convert OGG to HLS segments + generate an extended looping manifest.
 
     Returns the directory containing .m3u8 and .ts files, or None on failure.
+
+    ``infinite`` is the default: the manifest is built long enough (12h) to
+    outlast any night and the 10h session timer, so iOS Safari's native player
+    never reaches the end mid-sleep. Segments are referenced repeatedly — same
+    .ts files, no extra storage. We keep ``#EXT-X-ENDLIST`` so iOS treats it as
+    a seekable VOD (the most reliable native behaviour); the frontend also sets
+    ``audio.loop`` as a backstop so playback is effectively endless.
     """
+    if infinite:
+        loop_hours = max(loop_hours, 12)
     import subprocess
     import tempfile
 
@@ -238,6 +248,118 @@ def _stitch_clips(clip_paths: list[str], filepath: str,
                   parameters=["-b:a", "128k"])
     shutil.move(tmp_path, filepath)
     return filepath
+
+
+def _resolve_arc_clip(track: dict) -> str | None:
+    """Resolve a playlist track to a local OGG path, downloading from GCS if needed.
+
+    Returns a local filesystem path (possibly a temp file) or None if unresolved.
+    Caller is responsible for cleaning up temp files (those under tempfile dir).
+    """
+    import tempfile
+
+    # Prefer an existing local file — no download needed.
+    local = track.get("local_path") or ""
+    if not local:
+        src = track.get("src") or ""
+        if src.startswith("/media/music/"):
+            local = os.path.join("data/music", os.path.basename(src))
+    if local and os.path.exists(local):
+        return local
+
+    # Fall back to downloading the GCS/remote OGG.
+    remote = track.get("gcs_url") or track.get("src") or ""
+    if remote.startswith("http"):
+        try:
+            import requests
+            resp = requests.get(remote, timeout=30)
+            resp.raise_for_status()
+            tmp = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
+            tmp.write(resp.content)
+            tmp.close()
+            return tmp.name
+        except Exception as e:
+            log.warning("arc: could not fetch %s: %s", remote, e)
+            return None
+    return None
+
+
+def stitch_playlist_arc(playlist_tracks: list[dict], session_id: str) -> dict:
+    """Stitch a playlist arc (settling → transition → deep_sleep) into ONE
+    continuous, gaplessly-crossfaded source that loops forever at the OS media
+    layer — so overnight playback never depends on JavaScript advancing tracks
+    (which freezes when the phone locks). The arc remains a visual concept in
+    the UI; the audio is a single unbroken stream.
+
+    Returns ``{stitched_ogg_url, hls_url, duration_seconds, track_count, local_path}``
+    on success, or ``{"error": ...}`` so the caller can fall back to the legacy
+    multi-track playlist path.
+    """
+    import tempfile
+
+    if not playlist_tracks:
+        return {"error": "empty playlist"}
+
+    temp_clips = []
+    clip_paths = []
+    try:
+        for track in playlist_tracks:
+            path = _resolve_arc_clip(track)
+            if path:
+                clip_paths.append(path)
+                if path.startswith(tempfile.gettempdir()):
+                    temp_clips.append(path)
+
+        if not clip_paths:
+            return {"error": "no resolvable tracks"}
+
+        key = f"arc_{session_id}"
+        arc_dir = os.path.join("data", "music", "arcs")
+        os.makedirs(arc_dir, exist_ok=True)
+        arc_path = os.path.join(arc_dir, f"{key}.ogg")
+
+        # ~30 min continuous arc, longer crossfades for seamless transitions.
+        _stitch_clips(clip_paths, arc_path, target_minutes=30, crossfade_ms=6000)
+        if not os.path.exists(arc_path):
+            return {"error": "stitch failed"}
+
+        gcs_url = None
+        if is_gcs_enabled():
+            gcs_url = gcs_upload(arc_path, key)
+
+        hls_url = None
+        hls_dir = _convert_to_hls(arc_path, key, infinite=True)
+        if hls_dir:
+            if is_gcs_enabled():
+                hls_url = gcs_upload_hls(hls_dir, key)
+            shutil.rmtree(hls_dir, ignore_errors=True)
+
+        duration_seconds = None
+        try:
+            from pydub import AudioSegment
+            duration_seconds = round(len(AudioSegment.from_file(arc_path)) / 1000)
+        except Exception:
+            pass
+
+        ogg_url = gcs_url or ("/media/music/arcs/" + os.path.basename(arc_path))
+        log.info("arc: session=%s tracks=%d → %s (%ss)",
+                 session_id, len(clip_paths), hls_url or ogg_url, duration_seconds)
+        return {
+            "stitched_ogg_url": ogg_url,
+            "hls_url": hls_url,
+            "duration_seconds": duration_seconds,
+            "track_count": len(clip_paths),
+            "local_path": arc_path,
+        }
+    except Exception as e:
+        log.error("arc: stitch_playlist_arc failed for %s: %s", session_id, e)
+        return {"error": str(e)[:200]}
+    finally:
+        for tmp in temp_clips:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 _ENRICH_SUFFIXES = [

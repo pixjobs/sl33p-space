@@ -7,7 +7,7 @@ function switchTab(name) {
   if (name === 'insights') loadRecentSessions();
 }
 
-var _plan = { mood: null, track: null };
+var _plan = { mood: null, track: null, trackManual: false };
 var _trackingLevel = document.body.dataset.trackingLevel || 'basic';
 
 // ───── Persona ─────
@@ -241,7 +241,8 @@ function _sortTracksByMood(mood) {
     }
   });
 
-  if (chips.length > 0 && !_plan.track) {
+  if (chips.length > 0 && !_plan.trackManual) {
+    document.querySelectorAll('.track-chip').forEach(function(c) { c.classList.remove('active'); });
     _plan.track = { id: chips[0].dataset.id, src: chips[0].dataset.src, title: chips[0].dataset.title };
     chips[0].classList.add('active');
     _updateTrackIndicator(_plan.track.title);
@@ -252,6 +253,7 @@ function pickTrack(chip) {
   document.querySelectorAll('.track-chip').forEach(function(c) { c.classList.remove('active'); });
   chip.classList.add('active');
   _plan.track = { id: chip.dataset.id, src: chip.dataset.src, title: chip.dataset.title };
+  _plan.trackManual = true;
 
   var preview = document.getElementById('track-preview');
   var title = document.getElementById('preview-title');
@@ -356,7 +358,7 @@ function _resolveTrack() {
 async function startSleep() {
   var btn = document.getElementById('btn-start');
   btn.disabled = true;
-  btn.textContent = 'Setting up...';
+  btn.textContent = 'Composing your soundscape…';
 
   var preview = document.getElementById('preview-audio');
   if (preview) preview.pause();
@@ -783,51 +785,16 @@ function _renderAgentRec(data) {
     text.textContent = data.reasoning + (data.soundscape_title ? ' — ' + data.soundscape_title : '');
   }
 
-  var arc = document.getElementById('agent-arc');
-  if (arc) {
-    arc.replaceChildren();
-    if (Array.isArray(data.playlist_arc) && data.playlist_arc.length) {
-      data.playlist_arc.forEach(function(t, i) {
-        if (i > 0) arc.appendChild(_el('span', 'agent-arc-arrow', '→'));
-        var step = _el('span', 'agent-arc-step');
-        step.appendChild(_el('span', 'agent-arc-role', (t.role || '').replace(/_/g, ' ')));
-        step.appendChild(_el('span', 'agent-arc-title', t.title || '?'));
-        arc.appendChild(step);
-      });
-      arc.classList.remove('hidden');
-    } else {
-      arc.classList.add('hidden');
-    }
-  }
+  _renderMission(data.mission || []);
 
-  var traceList = document.getElementById('agent-trace');
-  var traceToggle = document.getElementById('agent-trace-toggle');
-  if (traceList && traceToggle) {
-    traceList.replaceChildren();
-    if (Array.isArray(data.plan_trace) && data.plan_trace.length) {
-      data.plan_trace.forEach(function(s) {
-        var li = _el('li', 'agent-trace-step');
-        li.appendChild(_el('span', 'agent-trace-step-label', s.step || ''));
-        li.appendChild(_el('span', 'agent-trace-step-detail', s.detail || ''));
-        traceList.appendChild(li);
-      });
-      traceToggle.style.display = '';
-      var label = traceToggle.querySelector('.agent-trace-label');
-      if (label) label.textContent = 'How I picked this (' + data.plan_trace.length + ' steps)';
-    } else {
-      traceToggle.style.display = 'none';
-      traceList.classList.add('hidden');
-    }
-  }
+  var ring = document.getElementById('agent-conf-ring');
+  if (ring) _renderConfidenceRing(ring, data.confidence);
 
   var meta = document.getElementById('agent-meta');
   if (meta) {
     var bits = [];
     if (data.predicted_outcome) bits.push(data.predicted_outcome);
-    if (typeof data.confidence === 'number') {
-      bits.push(Math.round(data.confidence * 100) + '% confidence');
-    }
-    if (data.source) bits.push(data.source === 'gemini' ? 'gemini 3' : 'mongodb only');
+    if (data.source) bits.push(data.source === 'gemini' ? 'Gemini 3 + MongoDB' : 'MongoDB');
     if (bits.length) {
       meta.textContent = bits.join(' · ');
       meta.classList.remove('hidden');
@@ -839,13 +806,52 @@ function _renderAgentRec(data) {
   if (content) content.classList.remove('hidden');
 }
 
-function toggleAgentTrace() {
-  var list = document.getElementById('agent-trace');
-  var toggle = document.getElementById('agent-trace-toggle');
-  if (!list || !toggle) return;
-  var open = !list.classList.contains('hidden');
-  list.classList.toggle('hidden', open);
-  toggle.classList.toggle('open', !open);
+// Render the mission steps, revealing them one-by-one so the agent visibly
+// "works through" the plan rather than dumping a finished list.
+function _renderMission(steps) {
+  var ol = document.getElementById('agent-mission');
+  if (!ol) return;
+  ol.replaceChildren();
+  if (!Array.isArray(steps) || !steps.length) { ol.classList.add('hidden'); return; }
+  ol.classList.remove('hidden');
+
+  steps.forEach(function(s, i) {
+    var li = _el('li', 'mission-step status-' + (s.status || 'done'));
+    if (s.mcp_tool) li.classList.add('is-mcp');
+    li.style.setProperty('--i', i);
+
+    var icon = _el('span', 'mission-icon');
+    li.appendChild(icon);
+
+    var body = _el('span', 'mission-body');
+    var head = _el('span', 'mission-title', s.title || '');
+    if (s.tool === 'MongoDB' || s.mcp_tool) {
+      var badge = _el('span', 'agent-trace-mcp-badge', s.mcp_tool ? 'MCP' : 'MongoDB');
+      if (s.mcp_query) badge.title = s.mcp_tool + ' — ' + s.mcp_query;
+      head.appendChild(badge);
+    }
+    body.appendChild(head);
+    if (s.detail) body.appendChild(_el('span', 'mission-detail', s.detail));
+    if (s.mcp_query) body.appendChild(_el('span', 'agent-trace-mcp-query', s.mcp_query));
+    li.appendChild(body);
+    ol.appendChild(li);
+
+    // Sequential reveal for the "watch it work" feel.
+    setTimeout(function() { li.classList.add('revealed'); }, 160 * i + 80);
+  });
+}
+
+function _renderConfidenceRing(el, confidence) {
+  var pct = (typeof confidence === 'number') ? Math.max(0, Math.min(1, confidence)) : 0;
+  var deg = Math.round(pct * 360);
+  var hue = 150; // MongoDB green-ish for high confidence
+  el.style.background =
+    'conic-gradient(hsl(' + hue + ' 80% 55%) ' + deg + 'deg, rgba(255,255,255,0.08) ' + deg + 'deg)';
+  el.replaceChildren();
+  var inner = _el('span', 'conf-ring-inner');
+  inner.appendChild(_el('strong', 'conf-ring-pct', Math.round(pct * 100) + '%'));
+  inner.appendChild(_el('span', 'conf-ring-label', 'confidence'));
+  el.appendChild(inner);
 }
 
 (function() {
@@ -861,23 +867,62 @@ function toggleAgentTrace() {
   })();
 })();
 
+// Apply the agent's chosen track to the plan card. Returns true if applied.
+function _applyAgentTrack() {
+  if (!_agentRec || !_agentRec.soundscape_title) return false;
+  var chips = document.querySelectorAll('.track-chip');
+  for (var i = 0; i < chips.length; i++) {
+    if (chips[i].dataset.title === _agentRec.soundscape_title) {
+      pickTrack(chips[i]);
+      _updateTrackIndicator(_agentRec.soundscape_title);
+      return true;
+    }
+  }
+  _updateTrackIndicator(_agentRec.soundscape_title);
+  return true;
+}
+
+// Approve & start — the agent executes the final mission step on the user's nod.
 function useAgentPlan() {
   if (!_agentRec) return;
-  if (_agentRec.soundscape_title) {
-    var chips = document.querySelectorAll('.track-chip');
-    for (var i = 0; i < chips.length; i++) {
-      if (chips[i].dataset.title === _agentRec.soundscape_title) {
-        pickTrack(chips[i]);
-        break;
-      }
+  _applyAgentTrack();
+  var ready = document.querySelector('#agent-mission .mission-step.status-await');
+  if (ready) ready.classList.add('status-done');
+  startSleep();
+}
+
+// Keep the user in control: cycle the chosen track through the candidates the
+// agent surfaced, updating the mission's "chose" step in place.
+function swapAgentTrack() {
+  if (!_agentRec) return;
+  var opts = _agentRec.available_tracks || [];
+  if (opts.length < 2) { showToast('No other tracks to swap to', 'info'); return; }
+  var cur = _agentRec.soundscape_title;
+  var idx = opts.indexOf(cur);
+  var next = opts[(idx + 1) % opts.length];
+  _agentRec.soundscape_title = next;
+  _applyAgentTrack();
+  // Update the mission's "chose" step detail in place.
+  var steps = document.querySelectorAll('#agent-mission .mission-step .mission-detail');
+  (_agentRec.mission || []).forEach(function(s, i) {
+    if (s.key === 'choose' && steps[i]) {
+      steps[i].textContent = next + ' — swapped by you';
     }
-    _updateTrackIndicator(_agentRec.soundscape_title);
-  }
+  });
+  var text = document.getElementById('agent-rec-text');
+  if (text) text.textContent = 'Swapped to ' + next + ' — your call.';
+  showToast('Swapped to ' + next, 'success');
+}
+
+// Re-run the whole mission from scratch.
+function regenerateAgentPlan() {
+  var loading = document.getElementById('agent-rec-loading');
   var content = document.getElementById('agent-rec-content');
   if (content) content.classList.add('hidden');
-  var planCard = document.getElementById('plan-card');
-  if (planCard) planCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  showToast('Plan applied', 'success');
+  if (loading) loading.classList.remove('hidden');
+  api('/api/sleep/recommend', 'POST', { mood: _plan.mood || 'calm' })
+    .then(function(data) { _renderAgentRec(data); })
+    .catch(function() { _renderAgentRec(null); });
 }
 
 // ───── APOD Background ─────

@@ -26,8 +26,15 @@ def load_config():
 def create_app():
     config = load_config()
 
-    from agent.agent import make_chat_handler
+    from agent.agent import make_chat_handler, prewarm_mcp
     chat_handler = make_chat_handler(config)
+
+    # Warm the MongoDB MCP connection so the first recommendation isn't slow.
+    try:
+        if prewarm_mcp():
+            print("  MCP:     MongoDB connection warmed")
+    except Exception:
+        pass
 
     from web.app import create_app as create_flask_app
     flask_app = create_flask_app(agent_runner=chat_handler)

@@ -563,6 +563,21 @@ def create_app(agent_runner=None):
             resp = {"session_id": session_id}
             if playlist_data:
                 resp["playlist"] = playlist_data
+
+            # Compose the whole arc into ONE continuous, infinitely-looping
+            # source so overnight playback never depends on JS advancing tracks
+            # (which freezes when the phone locks). Best-effort: on failure the
+            # frontend falls back to the legacy multi-track playlist.
+            if playlist_data and playlist_data.get("tracks"):
+                from db.sessions import update_session_arc
+                from audio.music_gen import stitch_playlist_arc
+                arc = stitch_playlist_arc(playlist_data["tracks"], session_id)
+                if "error" not in arc:
+                    update_session_arc(session_id, arc)
+                    resp["arc_audio"] = arc
+                else:
+                    app.logger.info("arc stitch skipped for %s: %s",
+                                    session_id, arc.get("error"))
             return jsonify(resp)
         return jsonify({"session_id": None, "status": "ok"})
 
@@ -619,6 +634,26 @@ def create_app(agent_runner=None):
             factors = data.get("factors")
             if factors is not None:
                 update_session_factors(sid, factors, user_id=uid)
+
+            # Write agent memory on non-skip review
+            try:
+                from db.memory import add_memory
+                from bson import ObjectId
+                db = get_db()
+                if db is not None:
+                    session = db.sleep_sessions.find_one({"_id": ObjectId(sid), "user_id": uid})
+                    if session:
+                        plan = session.get("plan") or {}
+                        track = plan.get("soundscape_title", "Unknown")
+                        mood = plan.get("mood", "calm")
+                        memory_text = f"Rated '{track}' {rating}/5 when {mood}"
+                        if factors:
+                            factor_note = ", ".join(factors[:2])
+                            memory_text += f", after {factor_note}"
+                        add_memory(uid, memory_text, kind="outcome")
+            except Exception:
+                pass  # Best-effort; never break review response
+
         return jsonify({"status": "ok"})
 
     @app.route("/api/sleep/review-schema")
