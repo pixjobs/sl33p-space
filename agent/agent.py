@@ -32,6 +32,9 @@ except ImportError:
 VALID_PERSONAS = ["shift_worker", "emergency_services", "shallow_sleeper", "insomniac"]
 VALID_FACTORS = ["caffeine", "exercise", "screen_time", "stress", "alcohol", "nap", "late_meal"]
 
+# The coach's consistent, personable identity — a sleep buddy who remembers you.
+COACH_NAME = "Nova"
+
 
 def _set_user(uid: str):
     _user_ctx.set(uid)
@@ -842,6 +845,49 @@ def get_recommendation(user_id: str, mood: str = "calm") -> dict:
         return base
 
 
+# --- Coach check-in (personable, deterministic, zero LLM cost) ---
+
+def build_coach_checkin(user_id: str) -> dict:
+    """A warm, time-aware coach line that reflects where the user is right now:
+    a pending review to do, an experiment in progress, a finished experiment to
+    report, or simply what worked last time. Deterministic — no LLM tokens."""
+    from datetime import datetime as _dt
+    from db.sessions import get_pending_review
+    from db.memory import get_memories
+
+    try:
+        from db.experiments import (get_active_experiment,
+                                    get_recent_completed_experiment)
+        active = get_active_experiment(user_id)
+        completed = get_recent_completed_experiment(user_id)
+    except Exception:
+        active, completed = None, None
+
+    morning = _dt.now().hour < 12
+    pending = get_pending_review(user_id)
+    memories = get_memories(user_id, limit=1)
+
+    parts = []
+    if completed and completed.get("result"):
+        parts.append(completed["result"]["conclusion"])
+    if pending:
+        title = (pending.get("plan") or {}).get("soundscape_title") or "last night"
+        opener = "Morning — how did" if morning else "Before tonight, how did"
+        parts.append(f"{opener} {title} treat you? A quick rating sharpens tonight's plan.")
+    elif active:
+        done = sum(1 for n in (active.get("nights") or []) if n.get("adhered"))
+        parts.append(f"We're {done}/{active.get('target_nights', 3)} into the "
+                     f"{active.get('label')} experiment — stay with it tonight.")
+    elif memories:
+        parts.append(f"Last time: {memories[0]['text'].lower()}.")
+
+    if not parts:
+        parts.append("Morning — let's see how you slept." if morning
+                     else "Ready when you are — let's set you up for a good night.")
+
+    return {"coach": COACH_NAME, "message": " ".join(parts), "morning": morning}
+
+
 # --- Agent setup ---
 
 def _build_prompt(user_id: str) -> str:
@@ -856,7 +902,9 @@ def _build_prompt(user_id: str) -> str:
     else:
         context = "No specific persona set. Adapt naturally to the user's tone."
 
-    prompt = ROOT_PROMPT.format(persona_context=context)
+    prompt = (f"Your name is {COACH_NAME}, the user's personal sleep coach — warm, "
+              f"familiar, and on their side. Use their data, not generic advice.\n\n"
+              + ROOT_PROMPT.format(persona_context=context))
 
     # Append memory section if memories exist
     memories = get_memories(user_id, limit=5)
@@ -864,6 +912,19 @@ def _build_prompt(user_id: str) -> str:
         prompt += "\n\n## What I remember about you\n"
         for m in memories:
             prompt += f"- {m.get('text', '')}\n"
+
+    # Make the agent aware of any running multi-night experiment.
+    try:
+        from db.experiments import get_active_experiment
+        active = get_active_experiment(user_id)
+        if active:
+            done = sum(1 for n in (active.get("nights") or []) if n.get("adhered"))
+            prompt += (f"\n\n## Active experiment\nYou are coaching a "
+                       f"{active.get('target_nights', 3)}-night experiment: "
+                       f"avoid {active.get('label')}. {done} nights logged so far. "
+                       f"Encourage the user to stick with it and remind them gently.\n")
+    except Exception:
+        pass
 
     return prompt
 

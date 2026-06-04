@@ -651,9 +651,64 @@ def create_app(agent_runner=None):
                             factor_note = ", ".join(factors[:2])
                             memory_text += f", after {factor_note}"
                         add_memory(uid, memory_text, kind="outcome")
+                        # Feed any running multi-night experiment.
+                        from db.experiments import record_experiment_night
+                        record_experiment_night(uid, session)
             except Exception:
                 pass  # Best-effort; never break review response
 
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/coach")
+    @require_auth
+    def api_coach():
+        from agent.agent import build_coach_checkin
+        from db.experiments import (get_active_experiment,
+                                     get_recent_completed_experiment,
+                                     propose_experiment)
+        uid = get_user_id()
+        active = get_active_experiment(uid)
+        proposed = None if active else propose_experiment(uid)
+        return jsonify({
+            "checkin": build_coach_checkin(uid),
+            "experiment": {
+                "active": active,
+                "completed": get_recent_completed_experiment(uid),
+                "proposed": proposed,
+            },
+        })
+
+    @app.route("/api/coach/experiment/accept", methods=["POST"])
+    @require_auth
+    def api_coach_experiment_accept():
+        from db.experiments import accept_experiment
+        data = request.get_json(force=True)
+        factor = (data or {}).get("factor")
+        if not factor:
+            return jsonify({"error": "factor required"}), 400
+        exp = accept_experiment(get_user_id(), factor)
+        return jsonify({"status": "ok", "experiment": exp})
+
+    @app.route("/api/coach/experiment/decline", methods=["POST"])
+    @require_auth
+    def api_coach_experiment_decline():
+        from db.experiments import decline_experiment
+        data = request.get_json(force=True)
+        factor = (data or {}).get("factor")
+        if not factor:
+            return jsonify({"error": "factor required"}), 400
+        decline_experiment(get_user_id(), factor)
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/coach/experiment/ack", methods=["POST"])
+    @require_auth
+    def api_coach_experiment_ack():
+        from db.experiments import acknowledge_experiment
+        data = request.get_json(force=True)
+        exp_id = (data or {}).get("id")
+        if not exp_id:
+            return jsonify({"error": "id required"}), 400
+        acknowledge_experiment(get_user_id(), exp_id)
         return jsonify({"status": "ok"})
 
     @app.route("/api/sleep/review-schema")

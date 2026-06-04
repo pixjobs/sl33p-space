@@ -27,6 +27,8 @@ Poor sleep is a real, costly health problem, worst for people on irregular or hi
 
 **Agent memory + close-the-loop** — After each session you rate the outcome. The agent records what worked in MongoDB (`agent_memory` collection) and cites those learnings on the next night's recommendation.
 
+**Personable coach + multi-night experiments** — A consistent coach (Nova) greets you, reviews last night, and remembers you across nights. When your data suggests a lever — e.g. screens or caffeine appear to cost you a star — the coach proposes a short, opt-in experiment, runs it across several nights as you review each one, then measures the result against your history and reports back. Plan → run-over-days → measure → adapt: agentic behaviour grounded entirely in MongoDB, no music generation required.
+
 ## Features
 
 - **AI music generation** — Lyria creates unique sleep tracks from text prompts. Tracks are stored in GCS and catalogued in MongoDB with mood scores and energy levels.

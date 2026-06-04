@@ -867,6 +867,103 @@ function _renderConfidenceRing(el, confidence) {
   })();
 })();
 
+// ───── Coach check-in + multi-night experiment ─────
+(function() {
+  if (document.getElementById('coach-strip')) refreshCoach();
+})();
+
+function refreshCoach() {
+  api('/api/coach').then(renderCoach).catch(function() {});
+}
+
+function renderCoach(data) {
+  if (!data) return;
+  var strip = document.getElementById('coach-strip');
+  var line = document.getElementById('coach-line');
+  var avatar = document.getElementById('coach-avatar');
+  if (strip && line && data.checkin) {
+    line.textContent = data.checkin.message || '';
+    if (avatar) avatar.textContent = (data.checkin.coach || 'N').charAt(0);
+    strip.classList.remove('hidden');
+  }
+  var mount = document.getElementById('experiment-mount');
+  if (!mount) return;
+  mount.replaceChildren();
+  var exp = data.experiment || {};
+  if (exp.completed) mount.appendChild(_expCompletedCard(exp.completed));
+  if (exp.active) mount.appendChild(_expActiveCard(exp.active));
+  else if (exp.proposed) mount.appendChild(_expProposedCard(exp.proposed));
+}
+
+function _expCard() {
+  var c = _el('section', 'exp-card');
+  var head = _el('div', 'exp-card-head');
+  head.appendChild(_el('span', 'exp-badge', 'Experiment'));
+  c.appendChild(head);
+  return { card: c, head: head };
+}
+
+function _expProposedCard(p) {
+  var b = _expCard();
+  b.head.appendChild(_el('span', 'exp-card-title', p.hypothesis || 'Try an experiment'));
+  if (p.detail) b.card.appendChild(_el('p', 'exp-detail', p.detail));
+  b.card.appendChild(_el('p', 'exp-ask',
+    'Run a ' + (p.target_nights || 3) + '-night test and I’ll measure the difference?'));
+  var actions = _el('div', 'exp-actions');
+  var yes = _el('button', 'btn btn-sm btn-primary rounded-lg', 'Start the test');
+  yes.onclick = function() { acceptExperiment(p.factor); };
+  var no = _el('button', 'btn btn-sm btn-ghost rounded-lg', 'Not now');
+  no.onclick = function() { declineExperiment(p.factor); };
+  actions.appendChild(yes); actions.appendChild(no);
+  b.card.appendChild(actions);
+  return b.card;
+}
+
+function _expActiveCard(a) {
+  var b = _expCard();
+  b.head.appendChild(_el('span', 'exp-card-title', 'Avoiding ' + (a.label || 'a factor')));
+  var target = a.target_nights || 3;
+  var done = (a.nights || []).filter(function(n) { return n.adhered; }).length;
+  var dots = _el('div', 'exp-dots');
+  for (var i = 0; i < target; i++) {
+    dots.appendChild(_el('span', 'exp-dot' + (i < done ? ' filled' : '')));
+  }
+  b.card.appendChild(dots);
+  b.card.appendChild(_el('p', 'exp-detail',
+    done + ' of ' + target + ' nights logged · rate tonight to keep it going'));
+  return b.card;
+}
+
+function _expCompletedCard(c) {
+  var b = _expCard();
+  b.head.appendChild(_el('span', 'exp-card-title', 'Experiment result'));
+  var res = c.result || {};
+  b.card.classList.add('exp-done');
+  b.card.appendChild(_el('p', 'exp-conclusion', res.conclusion || 'Experiment complete.'));
+  var actions = _el('div', 'exp-actions');
+  var ok = _el('button', 'btn btn-sm btn-ghost rounded-lg', 'Got it');
+  ok.onclick = function() { ackExperiment(c._id); };
+  actions.appendChild(ok);
+  b.card.appendChild(actions);
+  return b.card;
+}
+
+function acceptExperiment(factor) {
+  api('/api/coach/experiment/accept', 'POST', { factor: factor })
+    .then(function() { showToast('Experiment started', 'success'); refreshCoach(); })
+    .catch(function() { showToast('Could not start experiment', 'error'); });
+}
+
+function declineExperiment(factor) {
+  api('/api/coach/experiment/decline', 'POST', { factor: factor })
+    .then(function() { refreshCoach(); }).catch(function() {});
+}
+
+function ackExperiment(id) {
+  api('/api/coach/experiment/ack', 'POST', { id: id })
+    .then(function() { refreshCoach(); }).catch(function() {});
+}
+
 // Apply the agent's chosen track to the plan card. Returns true if applied.
 function _applyAgentTrack() {
   if (!_agentRec || !_agentRec.soundscape_title) return false;

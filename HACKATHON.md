@@ -31,6 +31,10 @@ The Mission is the agent's visible, watch-it-work surface. No chat needed.
 
 After each session you rate how it went. The agent records the outcome in MongoDB's `agent_memory` collection and cites what worked on the next night's recommendation. The loop: plan → execute → review → adapt → plan better.
 
+**Personable coach + multi-night experiments**
+
+A consistent coach (Nova) checks in each visit — reviewing last night, recalling what worked, and keeping a warm, familiar tone rather than acting like a generic chatbot. Its agentic core is the experiment engine: when your MongoDB factor correlations suggest a lever (e.g. caffeine nights average 2.5/5 versus 4.0/5 without), the coach proposes an opt-in N-night experiment, tracks adherence and ratings as you review each night, then aggregates the result and reports a verdict. This is a genuine plan → execute-over-days → measure → adapt loop — something a chatbot can't do — and it runs purely on MongoDB, with no per-night LLM or music-generation cost. New collection: `sleep_experiments`.
+
 **Tool-using chat agent (ADK)** — When you do chat, the agent has 12 tools chaining across MongoDB collections, music generation, and session lifecycle.
 
 ## Mission architecture (cheap + grounded)
@@ -45,7 +49,7 @@ Result: ~200 output tokens per recommendation, no parsing failures, and the trac
 
 ## MongoDB usage
 
-Six collections: `sleep_sessions`, `users`, `tracks`, `generated_assets`, `packs`, `agent_memory`.
+Seven collections: `sleep_sessions`, `users`, `tracks`, `generated_assets`, `packs`, `agent_memory`, `sleep_experiments`.
 
 Key operations driving the agent:
 - `aggregate` with `$group` + `$avg` — per-track quality ratings (load-bearing for MCP verification query)
@@ -54,6 +58,7 @@ Key operations driving the agent:
 - `find` + `$sort` — recent session history for Mission step 1
 - `update_one` / `insert_one` — session lifecycle (planned → active → completed → reviewed)
 - `insert_one` into `agent_memory` — stores outcome learnings after each review
+- `aggregate` with `$in` + `$group` over `sleep_experiments` — baseline avg rating with vs without a factor, driving the experiment proposal and verdict
 
 The mood × track matrix and factor correlations directly drive the track pick and Mission reasoning. The MCP query verifies the choice against real session data.
 
