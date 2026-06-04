@@ -38,6 +38,32 @@
   .sleep-display, .immersive.deep-night .sleep-display { transition: opacity 0.4s ease; }
 }
 
+/* ───── Tap-to-begin cue (autoplay-policy fallback, mobile) — soft + on-brand ───── */
+.tap-cue {
+  position: fixed; inset: 0; z-index: 50; cursor: pointer;
+  align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 44%, rgba(124,92,252,0.14), rgba(6,7,12,0.5) 62%);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.tap-cue-inner { text-align: center; pointer-events: none; }
+.tap-cue-orb {
+  width: 84px; height: 84px; margin: 0 auto 1.2rem; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(185,164,255,0.95);
+  background: radial-gradient(circle at 35% 30%, rgba(139,109,255,0.38), rgba(139,109,255,0.07));
+  border: 1px solid rgba(185,164,255,0.45);
+  box-shadow: 0 0 50px rgba(139,109,255,0.32), inset 0 0 20px rgba(139,109,255,0.18);
+  animation: tapPulse 2.2s ease-in-out infinite;
+}
+.tap-cue-orb svg { width: 34px; height: 34px; margin-left: 3px; }
+.tap-cue-text { font-family: var(--font-display, Georgia, serif); font-size: 1.4rem; color: rgba(243,239,230,0.92); letter-spacing: -0.01em; }
+.tap-cue-sub { font-size: 0.72rem; color: rgba(243,239,230,0.4); margin-top: 0.45rem; letter-spacing: 0.05em; }
+@keyframes tapPulse {
+  0%,100% { transform: scale(1); box-shadow: 0 0 50px rgba(139,109,255,0.3), inset 0 0 20px rgba(139,109,255,0.16); }
+  50% { transform: scale(1.06); box-shadow: 0 0 72px rgba(139,109,255,0.5), inset 0 0 26px rgba(139,109,255,0.28); }
+}
+@media (prefers-reduced-motion: reduce) { .tap-cue-orb { animation: none; } }
+
 .sleep-clock-label {
   font-size: 0.65rem;
   text-transform: uppercase;
@@ -507,12 +533,13 @@
   </div>
 
   <!-- Tap-to-start overlay (mobile autoplay blocked) -->
-  <div id="tap-overlay" style="display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;cursor:pointer" onclick="_dismissOverlay()">
-    <div style="text-align:center;pointer-events:none">
-      <div style="width:80px;height:80px;margin:0 auto 1rem;border-radius:50%;background:rgba(124,92,252,0.2);border:2px solid rgba(124,92,252,0.5);display:flex;align-items:center;justify-content:center;animation:pulse-play 1.5s ease-in-out infinite">
-        <svg viewBox="0 0 24 24" fill="rgba(124,92,252,0.9)" style="width:36px;height:36px"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+  <div id="tap-overlay" class="tap-cue" style="display:none" onclick="_dismissOverlay()">
+    <div class="tap-cue-inner">
+      <div class="tap-cue-orb">
+        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       </div>
-      <div style="color:rgba(255,255,255,0.7);font-size:0.85rem;font-weight:500">Tap to start soundscape</div>
+      <div class="tap-cue-text">Tap anywhere to begin</div>
+      <div class="tap-cue-sub">Your soundscape is ready</div>
     </div>
   </div>
 
@@ -838,9 +865,16 @@ function _startPlayback() {
       console.log('[audio] play() succeeded');
     }).catch(function(e) {
       console.warn('[audio] play() blocked:', e.name);
-      _needsGesture = true;
-      _showOverlay();
-      _setStatus('Tap anywhere to start');
+      // Only the browser's autoplay policy needs a tap-to-start cue. Other
+      // errors (decode, network) are handled by the audio 'error' retry path,
+      // so don't show a misleading "tap to start" prompt for those.
+      if (e && e.name === 'NotAllowedError') {
+        _needsGesture = true;
+        _showOverlay();
+        _setStatus('Tap anywhere to begin');
+      } else {
+        _setStatus('Starting…');
+      }
     });
   }
 }
@@ -1616,18 +1650,22 @@ loadApodBackground();
 
 // Cinematic entrance — the cosmos settles in and the display rises into place.
 // Uses gsap.from() so a missing/blocked GSAP simply leaves everything visible.
+// IMPORTANT: clearProps:'all' wipes the inline styles gsap leaves behind, so
+// the .hidden / .deep-night classes stay in full control of the UI afterwards.
+// We deliberately do NOT animate the controls bar — its show/hide is governed
+// by the .hidden class, and leftover inline styles there would break exiting.
 function _sleepEntrance() {
-  if (typeof gsap === 'undefined') return;
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  var bg = document.getElementById('imm-bg');
-  if (bg) gsap.from(bg, { opacity: 0, scale: 1.06, duration: 2.4, ease: 'power2.out' });
-  gsap.from('.sleep-clock', { opacity: 0, y: 24, filter: 'blur(8px)', duration: 1.4, ease: 'power3.out', delay: 0.25 });
-  gsap.from(['.soundscape-info', '.sleep-telemetry', '.status-readout', '.viz-container', '.session-start'], {
-    opacity: 0, y: 18, duration: 1.1, stagger: 0.14, ease: 'power3.out', delay: 0.6,
-    clearProps: 'transform,filter'
-  });
-  var controls = document.getElementById('sleep-controls');
-  if (controls) gsap.from(controls, { opacity: 0, y: 30, duration: 1, ease: 'power3.out', delay: 1.1 });
+  try {
+    if (typeof gsap === 'undefined') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var bg = document.getElementById('imm-bg');
+    if (bg) gsap.from(bg, { opacity: 0, scale: 1.06, duration: 2.4, ease: 'power2.out', clearProps: 'all' });
+    gsap.from('.sleep-clock', { opacity: 0, y: 24, filter: 'blur(8px)', duration: 1.4, ease: 'power3.out', delay: 0.25, clearProps: 'all' });
+    gsap.from(['.soundscape-info', '.sleep-telemetry', '.status-readout', '.viz-container', '.session-start'], {
+      opacity: 0, y: 18, duration: 1.1, stagger: 0.14, ease: 'power3.out', delay: 0.6,
+      clearProps: 'all'
+    });
+  } catch (e) { /* never let the entrance break the player */ }
 }
 _sleepEntrance();
 
