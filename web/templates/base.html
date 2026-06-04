@@ -15,19 +15,25 @@
             surface: { DEFAULT: 'rgba(255,255,255,0.04)', hover: 'rgba(255,255,255,0.07)', solid: '#13151d' },
             border: { DEFAULT: 'rgba(255,255,255,0.08)', hover: 'rgba(255,255,255,0.14)' },
           },
-          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          fontFamily: {
+            sans: ['Hanken Grotesk', 'system-ui', 'sans-serif'],
+            display: ['Fraunces', 'Georgia', 'serif'],
+          },
         },
       },
     }
   </script>
   <link rel="icon" type="image/jpeg" href="{{ url_for('static', filename='logo.jpg') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='logo.jpg') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% block styles %}{% endblock %}
 </head>
 <body data-tracking-level="{{ tracking_level|default('basic') }}">
   <nav class="nav">
-    <a href="/" class="nav-brand"><img src="{{ url_for('static', filename='logo.jpg') }}" alt="" class="inline-block w-6 h-6 rounded-md mr-1.5 align-middle" style="margin-top:-2px">sl33p-space</a>
+    <a href="/" class="nav-brand"><img src="{{ url_for('static', filename='logo.jpg') }}" alt="" class="inline-block w-6 h-6 rounded-md mr-1.5 align-middle" style="margin-top:-2px">sl33p<b>·</b>space</a>
     <div class="nav-user" id="nav-user">
       {% if is_admin %}<a href="/admin" class="btn btn-sm btn-ghost" style="margin-right:0.5rem">Admin</a>{% endif %}
       <a href="/" class="btn btn-sm btn-ghost" id="sign-in-btn" style="display:none">Sign In</a>

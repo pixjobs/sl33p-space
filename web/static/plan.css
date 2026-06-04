@@ -69,19 +69,21 @@
 .tier-free { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.35); }
 
 .tab-bar {
-  display: flex; gap: 0.25rem; padding: 0.25rem;
-  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 0.75rem; margin-bottom: 1rem;
+  display: flex; gap: 0.25rem; padding: 0.3rem;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border);
+  border-radius: 0.9rem; margin-bottom: 1rem; backdrop-filter: blur(8px);
 }
 .tab {
-  flex: 1; padding: 0.5rem 0.75rem; border: none; border-radius: 0.5rem;
-  background: transparent; color: rgba(255,255,255,0.35); font-family: inherit;
-  font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: 0.2s;
+  flex: 1; padding: 0.55rem 0.75rem; border: 1px solid transparent; border-radius: 0.65rem;
+  background: transparent; color: var(--text-muted); font-family: inherit;
+  font-size: 0.78rem; font-weight: 500; letter-spacing: 0.01em; cursor: pointer;
+  transition: 0.2s cubic-bezier(.4,0,.2,1);
 }
-.tab:hover { color: rgba(255,255,255,0.6); }
+.tab:hover { color: var(--text-secondary); }
 .tab.active {
-  background: rgba(124,92,252,0.1); color: #c4b5fd;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  background: linear-gradient(180deg, rgba(139,109,255,0.2), rgba(139,109,255,0.07));
+  color: var(--accent-bright); border-color: rgba(139,109,255,0.28);
+  box-shadow: 0 4px 14px rgba(124,92,252,0.18);
 }
 
 .tab-panel { display: none; }
@@ -418,7 +420,7 @@ summary { list-style: none; }
 
 .insight-stat-row { display: flex; gap: 1rem; flex-wrap: wrap; }
 .insight-stat { display: flex; flex-direction: column; align-items: center; min-width: 3rem; }
-.insight-stat-val { font-size: 0.95rem; font-weight: 700; color: #7c5cfc; }
+.insight-stat-val { font-family: var(--font-display); font-size: 1.25rem; font-weight: 500; color: var(--accent-bright); line-height: 1; }
 .insight-stat-label { font-size: 0.5rem; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,0.2); }
 
 /* Recent pattern heatmap grid */
@@ -724,12 +726,13 @@ summary { list-style: none; }
 .agent-vibe {
   position: relative; margin: 0;
   padding: 0.4rem 0 0.5rem;
-  font-size: 1.15rem; line-height: 1.35; font-style: italic; font-weight: 300;
-  color: #d8c9ff; letter-spacing: 0.2px;
-  background: linear-gradient(95deg, #d8c9ff 0%, #c4b5fd 50%, #a78bfa 100%);
+  font-family: var(--font-display);
+  font-size: 1.4rem; line-height: 1.25; font-style: italic; font-weight: 500;
+  letter-spacing: -0.01em;
+  background: linear-gradient(100deg, #efe7d6 0%, var(--accent-bright) 55%, var(--amber) 100%);
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 24px rgba(168, 148, 255, 0.15);
+  text-shadow: 0 0 24px rgba(168, 148, 255, 0.12);
 }
 
 /* Playlist arc preview — settling → transition → deep_sleep */
