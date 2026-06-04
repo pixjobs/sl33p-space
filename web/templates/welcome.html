@@ -1,133 +1,447 @@
 {% extends "base.html" %}
-{% block title %}sl33p-space — Mission Control{% endblock %}
+{% block title %}sl33p-space — an agent for your nights{% endblock %}
 {% block styles %}
+<script>document.documentElement.classList.add('js');</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-.stars::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(1.5px 1.5px at 10% 15%, rgba(255,255,255,0.4) 50%, transparent 50%),
-    radial-gradient(1px 1px at 25% 35%, rgba(255,255,255,0.3) 50%, transparent 50%),
-    radial-gradient(1.5px 1.5px at 45% 8%, rgba(255,255,255,0.4) 50%, transparent 50%),
-    radial-gradient(1px 1px at 60% 45%, rgba(255,255,255,0.25) 50%, transparent 50%),
-    radial-gradient(1.5px 1.5px at 75% 20%, rgba(255,255,255,0.45) 50%, transparent 50%),
-    radial-gradient(1px 1px at 85% 60%, rgba(255,255,255,0.2) 50%, transparent 50%),
-    radial-gradient(1.5px 1.5px at 90% 80%, rgba(255,255,255,0.4) 50%, transparent 50%);
-  animation: twinkle 8s ease-in-out infinite alternate;
+/* ───────────────────────── sl33p-space landing ─────────────────────────
+   "Nocturnal observatory" — calm, editorial, deep-space. Fraunces display
+   over Hanken Grotesk, aurora + parallax stars, GSAP scroll choreography. */
+
+.lp {
+  --ink:        #f3efe6;   /* moonlight cream */
+  --ink-dim:    rgba(243,239,230,0.62);
+  --ink-faint:  rgba(243,239,230,0.34);
+  --bg0:        #06070c;
+  --bg1:        #0a0c16;
+  --violet:     #8b6dff;
+  --violet-2:   #b9a4ff;
+  --mongo:      #00ed64;
+  --mongo-deep: #00684a;
+  --amber:      #ffcaa0;
+  --line:       rgba(243,239,230,0.10);
+  --card:       rgba(255,255,255,0.035);
 }
-@keyframes twinkle { 0%{opacity:.5} to{opacity:1} }
+
+/* Break out of base layout for a full-bleed page */
+.nav { display: none !important; }
+body > footer { display: none !important; }
+main.container { max-width: none; margin: 0; padding: 0; gap: 0; }
+
+.lp {
+  position: relative;
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(140% 110% at 50% -10%, #141029 0%, var(--bg1) 38%, var(--bg0) 100%);
+  overflow: clip;
+  -webkit-font-smoothing: antialiased;
+}
+.lp::after { /* fine grain overlay */
+  content: ''; position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  opacity: 0.05; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Atmosphere layers ── */
+.lp-atmos { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.lp-aurora {
+  position: absolute; width: 80vw; height: 80vw; left: 50%; top: -28vw;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(closest-side, rgba(139,109,255,0.40), transparent 70%),
+    radial-gradient(closest-side, rgba(0,237,100,0.16), transparent 70%);
+  background-position: 30% 40%, 70% 60%;
+  background-repeat: no-repeat; background-size: 70% 70%, 60% 60%;
+  filter: blur(40px); opacity: 0.7;
+  animation: auroraDrift 26s ease-in-out infinite alternate;
+}
+@keyframes auroraDrift {
+  0%   { transform: translateX(-52%) rotate(-4deg) scale(1); }
+  100% { transform: translateX(-48%) rotate(5deg) scale(1.12); }
+}
+.lp-stars { position: absolute; inset: -10% 0 0 0; }
+.lp-stars span {
+  position: absolute; border-radius: 50%; background: #fff;
+  animation: twk var(--d,6s) ease-in-out infinite alternate;
+}
+@keyframes twk { from { opacity: .15; } to { opacity: .9; } }
+.lp-moon {
+  position: absolute; right: -6vw; top: 8vh; width: 34vw; height: 34vw; max-width: 460px; max-height: 460px;
+  border-radius: 50%;
+  background: radial-gradient(40% 40% at 35% 30%, #fbf6ec 0%, #d9d2c4 45%, #8d8a8f 78%, #4a4760 100%);
+  box-shadow: 0 0 120px 20px rgba(185,164,255,0.18), inset -22px -16px 50px rgba(0,0,0,0.45);
+  opacity: 0.9;
+}
+
+.lp-wrap { position: relative; z-index: 2; }
+.lp section { position: relative; }
+
+/* scroll progress */
+.lp-progress { position: fixed; top: 0; left: 0; height: 2px; width: 0%; z-index: 60;
+  background: linear-gradient(90deg, var(--violet), var(--mongo)); box-shadow: 0 0 12px var(--violet); }
+
+/* ── Top nav ── */
+.lp-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1.1rem clamp(1.1rem, 4vw, 3rem);
+  transition: background .4s ease, backdrop-filter .4s ease, border-color .4s ease;
+  border-bottom: 1px solid transparent;
+}
+.lp-nav.scrolled { background: rgba(6,7,12,0.72); backdrop-filter: blur(16px); border-bottom-color: var(--line); }
+.lp-brand { display: flex; align-items: center; gap: .6rem; font-family: 'Fraunces',serif;
+  font-weight: 600; font-size: 1.15rem; letter-spacing: -.01em; color: var(--ink); text-decoration: none; }
+.lp-brand img { width: 26px; height: 26px; border-radius: 8px; }
+.lp-brand b { color: var(--violet-2); font-weight: 600; }
+.lp-nav-links { display: flex; align-items: center; gap: 2rem; }
+.lp-nav-links a { color: var(--ink-dim); text-decoration: none; font-size: .82rem; font-weight: 500;
+  letter-spacing: .01em; transition: color .2s; }
+.lp-nav-links a:hover { color: var(--ink); }
+@media (max-width: 760px) { .lp-nav-links .lp-anchor { display: none; } }
+
+.lp-btn { font: inherit; cursor: pointer; border: 0; border-radius: 999px;
+  padding: .6rem 1.15rem; font-size: .82rem; font-weight: 600; letter-spacing: .01em;
+  transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, background .25s; }
+.lp-btn-primary { color: #0a0814; background: linear-gradient(180deg, #efeafc, var(--violet-2));
+  box-shadow: 0 8px 30px rgba(139,109,255,0.35); }
+.lp-btn-primary:hover { box-shadow: 0 12px 40px rgba(139,109,255,0.5); }
+.lp-btn-ghost { color: var(--ink); background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
+.lp-btn-ghost:hover { background: rgba(255,255,255,0.1); }
+
+/* ── Hero ── */
+.lp-hero { min-height: 100svh; display: flex; flex-direction: column; justify-content: center;
+  padding: 7rem clamp(1.1rem, 6vw, 6rem) 4rem; max-width: 1180px; margin: 0 auto; }
+.lp-eyebrow { display: inline-flex; align-items: center; gap: .55rem; align-self: flex-start;
+  padding: .4rem .8rem; border-radius: 999px; border: 1px solid var(--line);
+  background: rgba(255,255,255,0.03); font-size: .68rem; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--ink-dim); }
+.lp-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mongo);
+  box-shadow: 0 0 10px var(--mongo); animation: pulse 2.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:.4;transform:scale(.8)} 50%{opacity:1;transform:scale(1.15)} }
+
+.lp-h1 { font-family: 'Fraunces', serif; font-weight: 400; line-height: 0.96;
+  font-size: clamp(3rem, 11vw, 8.5rem); letter-spacing: -0.025em; margin: 1.4rem 0 0;
+  font-optical-sizing: auto; }
+.lp-h1 .ital { font-style: italic; font-weight: 500;
+  background: linear-gradient(100deg, var(--violet-2) 10%, var(--amber) 90%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.lp-h1 .word { display: inline-block; }
+.lp-sub { max-width: 34ch; margin: 1.8rem 0 0; font-size: clamp(1rem, 1.6vw, 1.22rem);
+  line-height: 1.55; color: var(--ink-dim); font-weight: 400; }
+.lp-cta-row { display: flex; flex-wrap: wrap; gap: .9rem; margin-top: 2.4rem; align-items: center; }
+.lp-cta-row .lp-btn { padding: .85rem 1.6rem; font-size: .92rem; }
+.lp-cta-note { font-size: .72rem; color: var(--ink-faint); }
+
+.lp-scrollcue { position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%);
+  font-size: .64rem; letter-spacing: .25em; text-transform: uppercase; color: var(--ink-faint);
+  display: flex; flex-direction: column; align-items: center; gap: .5rem; }
+.lp-scrollcue .bar { width: 1px; height: 38px; background: linear-gradient(var(--ink-faint), transparent);
+  animation: cue 2s ease-in-out infinite; transform-origin: top; }
+@keyframes cue { 0%,100%{transform:scaleY(.4);opacity:.3} 50%{transform:scaleY(1);opacity:.9} }
+
+/* ── Generic section frame ── */
+.lp-band { max-width: 1180px; margin: 0 auto; padding: clamp(5rem, 12vh, 9rem) clamp(1.1rem, 6vw, 6rem); }
+.lp-kicker { font-size: .7rem; letter-spacing: .22em; text-transform: uppercase; color: var(--violet-2);
+  display: flex; align-items: center; gap: .7rem; margin-bottom: 1.3rem; }
+.lp-kicker::before { content: ''; width: 26px; height: 1px; background: var(--violet); display: inline-block; }
+.lp-h2 { font-family: 'Fraunces', serif; font-weight: 400; font-size: clamp(2rem, 5vw, 3.6rem);
+  line-height: 1.04; letter-spacing: -0.02em; margin: 0 0 1rem; max-width: 18ch; }
+.lp-lead { font-size: clamp(1rem,1.4vw,1.18rem); color: var(--ink-dim); line-height: 1.6; max-width: 56ch; }
+
+/* ── Problem strip ── */
+.lp-personas { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 2rem; }
+.lp-persona { padding: .5rem 1rem; border: 1px solid var(--line); border-radius: 999px;
+  font-size: .82rem; color: var(--ink-dim); background: var(--card); }
+.lp-persona b { color: var(--ink); font-weight: 600; }
+
+/* ── Mission stepper ── */
+.lp-mission { display: grid; grid-template-columns: 1fr; gap: 0; margin-top: 3rem; position: relative; }
+.lp-mline { position: absolute; left: 19px; top: 12px; bottom: 12px; width: 2px;
+  background: linear-gradient(var(--violet), var(--mongo)); transform-origin: top; transform: scaleY(0); }
+.lp-step { display: grid; grid-template-columns: 40px 1fr; gap: 1.2rem; padding: 1rem 0; align-items: start; }
+.lp-step-dot { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(139,109,255,0.12); border: 1px solid rgba(139,109,255,0.4); color: var(--violet-2);
+  font-family: 'Fraunces',serif; font-size: 1rem; position: relative; z-index: 2; }
+.lp-step.mcp .lp-step-dot { background: rgba(0,237,100,0.1); border-color: rgba(0,237,100,0.45); color: var(--mongo); }
+.lp-step h3 { font-size: 1.08rem; font-weight: 600; margin: .35rem 0 .25rem; display: flex; align-items: center; gap: .6rem; }
+.lp-step p { color: var(--ink-dim); font-size: .92rem; line-height: 1.5; margin: 0; max-width: 52ch; }
+.lp-mcp-badge { font-size: .55rem; font-weight: 700; letter-spacing: .08em; padding: .12rem .4rem;
+  border-radius: 5px; color: var(--mongo); background: rgba(0,104,74,0.3); border: 1px solid rgba(0,237,100,0.4); }
+
+/* ── Feature grid ── */
+.lp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1px;
+  margin-top: 3rem; background: var(--line); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; }
+.lp-feat { background: linear-gradient(180deg, rgba(13,15,25,0.9), rgba(8,9,16,0.9)); padding: 2rem 1.7rem;
+  transition: background .3s; }
+.lp-feat:hover { background: linear-gradient(180deg, rgba(22,20,42,0.95), rgba(10,11,20,0.95)); }
+.lp-feat-ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+  background: rgba(139,109,255,0.12); color: var(--violet-2); margin-bottom: 1.1rem; }
+.lp-feat.green .lp-feat-ic { background: rgba(0,237,100,0.1); color: var(--mongo); }
+.lp-feat h3 { font-size: 1.05rem; font-weight: 600; margin: 0 0 .5rem; }
+.lp-feat p { color: var(--ink-dim); font-size: .88rem; line-height: 1.5; margin: 0; }
+
+/* ── Tech band / stats ── */
+.lp-tech { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(0,237,100,0.04), transparent); }
+.lp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 2rem; margin: 2.5rem 0 0; }
+.lp-stat .n { font-family: 'Fraunces',serif; font-size: clamp(2.2rem,4vw,3rem); line-height: 1; color: var(--ink);
+  font-variant-numeric: tabular-nums; }
+.lp-stat .l { font-size: .8rem; color: var(--ink-faint); margin-top: .5rem; }
+.lp-stack { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 2.6rem; }
+.lp-chip { font-size: .78rem; color: var(--ink-dim); padding: .45rem .9rem; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--card); }
+.lp-chip.mongo { color: var(--mongo); border-color: rgba(0,237,100,0.3); }
+
+/* ── Begin / auth ── */
+.lp-begin { max-width: 1180px; margin: 0 auto; padding: clamp(5rem,12vh,9rem) clamp(1.1rem,6vw,6rem) 6rem;
+  display: grid; grid-template-columns: 1.1fr 1fr; gap: 4rem; align-items: center; }
+@media (max-width: 880px){ .lp-begin { grid-template-columns: 1fr; gap: 2.5rem; } }
+.lp-authcard { background: linear-gradient(180deg, rgba(20,18,40,0.7), rgba(8,9,16,0.7));
+  border: 1px solid var(--line); border-radius: 24px; padding: 2.2rem; backdrop-filter: blur(10px);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.45); }
+.lp-authcard h3 { font-family: 'Fraunces',serif; font-weight: 500; font-size: 1.5rem; margin: 0 0 .4rem; }
+.lp-authcard p.s { color: var(--ink-faint); font-size: .82rem; margin: 0 0 1.5rem; }
+.lp-input { width: 100%; padding: .7rem .9rem; border-radius: 11px; background: rgba(0,0,0,0.25);
+  border: 1px solid var(--line); color: var(--ink); font: inherit; font-size: .9rem; transition: border-color .2s; }
+.lp-input::placeholder { color: var(--ink-faint); }
+.lp-input:focus { outline: none; border-color: rgba(139,109,255,0.6); }
+.lp-input-label { display:block; font-size:.65rem; letter-spacing:.06em; text-transform:uppercase;
+  color: var(--ink-faint); margin: 0 0 .35rem .15rem; }
+.lp-google { width: 100%; display: flex; align-items: center; justify-content: center; gap: .7rem;
+  padding: .85rem; border-radius: 12px; border: 0; cursor: pointer; font: inherit; font-weight: 600; font-size: .92rem;
+  color: #0a0814; background: linear-gradient(180deg,#fff,#e7e1f6); transition: transform .2s, box-shadow .2s; }
+.lp-google:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(255,255,255,0.12); }
+.lp-divider { display:flex; align-items:center; gap:.8rem; margin: 1.1rem 0; color: var(--ink-faint); font-size:.72rem; }
+.lp-divider::before, .lp-divider::after { content:''; flex:1; height:1px; background: var(--line); }
+.lp-ghostbtn { width:100%; padding:.8rem; border-radius:12px; cursor:pointer; font:inherit; font-weight:600;
+  font-size:.88rem; color: var(--ink); background: rgba(255,255,255,0.05); border: 1px solid var(--line); transition: background .2s; }
+.lp-ghostbtn:hover { background: rgba(255,255,255,0.1); }
+.lp-fineprint { font-size: .66rem; color: var(--ink-faint); margin-top: 1rem; line-height: 1.5; }
+.lp-fineprint a { color: var(--violet-2); }
+
+.lp-foot { border-top: 1px solid var(--line); padding: 2.2rem clamp(1.1rem,6vw,6rem);
+  display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;
+  color: var(--ink-faint); font-size: .76rem; max-width: 1180px; margin: 0 auto; }
+.lp-foot a { color: var(--ink-dim); text-decoration: none; }
+.lp-foot a:hover { color: var(--ink); }
+.lp-foot .links { display: flex; gap: 1.3rem; }
+
+/* ── Reveal states (only when JS is on) ── */
+html.js .reveal { opacity: 0; transform: translateY(26px); }
+html.js .reveal-ready, .revealed { opacity: 1 !important; transform: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  html.js .reveal { opacity: 1 !important; transform: none !important; }
+  .lp-aurora, .lp-stars span, .lp-scrollcue .bar, .lp-eyebrow .dot { animation: none !important; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<section class="stars relative flex items-center justify-center min-h-[calc(100vh-120px)] text-center">
-  <div class="relative z-10 max-w-md mx-auto px-4">
-    <img src="{{ url_for('static', filename='logo.jpg') }}" alt="sl33p-space" class="w-20 h-20 rounded-2xl mx-auto mb-5 shadow-lg shadow-brand/20">
+<div class="lp" id="lp">
+  <div class="lp-progress" id="lp-progress"></div>
 
-    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 mb-6 rounded-full text-xs font-medium text-brand border border-brand/20 bg-brand-soft">
-      AI Sleep Companion
-    </span>
-
-    <h1 class="text-5xl font-bold tracking-[-2px] text-brand mb-3">sl33p-space</h1>
-
-    <p class="text-white/50 leading-relaxed mb-10 max-w-sm mx-auto">
-      Sleep better tonight. AI-crafted soundscapes, a sleep journal that learns, and insights that help you understand your patterns.
-    </p>
-
-    <div class="flex flex-col gap-4 mb-10 text-left">
-      <div class="flex items-center gap-3 text-sm text-white/50">
-        <span class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-brand-soft text-brand">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-5 h-5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-        </span>
-        <span>AI sleep coach that learns your patterns</span>
-      </div>
-      <div class="flex items-center gap-3 text-sm text-white/50">
-        <span class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-brand-soft text-brand">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-5 h-5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        </span>
-        <span>Drift off to AI-generated ambient music</span>
-      </div>
-      <div class="flex items-center gap-3 text-sm text-white/50">
-        <span class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-brand-soft text-brand">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-5 h-5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-        </span>
-        <span>Sleep journal with personalised insights</span>
-      </div>
-    </div>
-
-    {# ── Auth buttons (default view) ── #}
-    <div id="auth-buttons">
-      <button class="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-sm font-semibold bg-brand hover:bg-brand-hover text-white shadow-lg shadow-brand/25 transition-all duration-200 hover:-translate-y-0.5 w-full justify-center" onclick="signInWithGoogle()">
-        <svg viewBox="0 0 24 24" class="w-[18px] h-[18px]" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-        Continue with Google
-      </button>
-
-      <div class="flex items-center gap-3 my-4">
-        <div class="flex-1 h-px bg-white/10"></div>
-        <span class="text-xs text-white/25">or</span>
-        <div class="flex-1 h-px bg-white/10"></div>
-      </div>
-
-      <button class="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl text-sm font-semibold bg-surface border border-border hover:border-border-hover text-white/70 hover:text-white transition-all duration-200 w-full justify-center" onclick="showEmailAuth('signin')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-[18px] h-[18px]"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 4l-10 8L2 4"/></svg>
-        Continue with Email
-      </button>
-    </div>
-
-    {# ── Email auth form (hidden by default) ── #}
-    <div id="auth-email-form" class="hidden">
-      <form onsubmit="handleEmailAuth(event)" class="text-left space-y-3">
-        <div id="auth-name-field" class="hidden">
-          <label class="block text-[0.65rem] text-white/30 mb-1 ml-1">Display name</label>
-          <input type="text" id="auth-name" placeholder="Your name (optional)" autocomplete="name" class="w-full px-4 py-2.5 rounded-lg bg-surface border border-border text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-brand/50 transition-colors">
-        </div>
-        <div>
-          <label class="block text-[0.65rem] text-white/30 mb-1 ml-1">Email</label>
-          <input type="email" id="auth-email" required placeholder="you@example.com" autocomplete="email" class="w-full px-4 py-2.5 rounded-lg bg-surface border border-border text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-brand/50 transition-colors">
-        </div>
-        <div>
-          <label class="block text-[0.65rem] text-white/30 mb-1 ml-1">Password</label>
-          <input type="password" id="auth-password" required minlength="6" placeholder="Min. 6 characters" autocomplete="current-password" class="w-full px-4 py-2.5 rounded-lg bg-surface border border-border text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-brand/50 transition-colors">
-        </div>
-        <div id="auth-confirm-field" class="hidden">
-          <label class="block text-[0.65rem] text-white/30 mb-1 ml-1">Confirm password</label>
-          <input type="password" id="auth-password-confirm" minlength="6" placeholder="Repeat password" autocomplete="new-password" class="w-full px-4 py-2.5 rounded-lg bg-surface border border-border text-sm text-white/80 placeholder-white/20 focus:outline-none focus:border-brand/50 transition-colors">
-        </div>
-
-        <div id="auth-error" class="text-xs text-red-400/80 px-1" style="display:none"></div>
-
-        <button type="submit" id="auth-submit-btn" class="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-xl text-sm font-semibold bg-brand hover:bg-brand-hover text-white shadow-lg shadow-brand/25 transition-all duration-200 w-full">
-          Sign In
-        </button>
-
-        <div class="flex items-center justify-between text-xs px-1">
-          <button type="button" id="auth-forgot" class="text-white/30 hover:text-white/50 bg-transparent border-0 cursor-pointer transition-colors" onclick="resetPassword(document.getElementById('auth-email').value)">Forgot password?</button>
-          <button type="button" id="auth-toggle" class="text-brand/60 hover:text-brand bg-transparent border-0 cursor-pointer transition-colors" onclick="toggleAuthMode()">Create account</button>
-        </div>
-      </form>
-
-      <button class="mt-4 text-xs text-white/25 hover:text-white/40 bg-transparent border-0 cursor-pointer transition-colors" onclick="showAuthButtons()">
-        &larr; Back to all options
-      </button>
-    </div>
-
-    <p class="text-[0.65rem] text-white/20 mt-4">By signing in, you agree to our <a href="/terms" class="text-brand/50 hover:text-brand underline">Terms of Service</a> and <a href="/privacy" class="text-brand/50 hover:text-brand underline">Privacy Policy</a>.</p>
-
-    <div id="referral-note" class="hidden mt-4 px-4 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20 text-xs text-violet-300/70">
-      You've been invited! Sign in to claim your bonus credit.
-    </div>
-
-    <button class="mt-6 inline-flex items-center gap-2 text-xs text-white/20 hover:text-white/40 bg-transparent border-0 cursor-pointer transition-colors" onclick="shareSiteWelcome()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-3.5 h-3.5"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-      Share sl33p-space with a friend
-    </button>
+  <div class="lp-atmos" aria-hidden="true">
+    <div class="lp-aurora" id="lp-aurora"></div>
+    <div class="lp-stars" id="lp-stars"></div>
+    <div class="lp-moon" id="lp-moon"></div>
   </div>
-</section>
+
+  <!-- Nav -->
+  <nav class="lp-nav" id="lp-nav">
+    <a href="#top" class="lp-brand"><img src="{{ url_for('static', filename='logo.jpg') }}" alt="">sl33p<b>·</b>space</a>
+    <div class="lp-nav-links">
+      <a href="#mission" class="lp-anchor">How it works</a>
+      <a href="#features" class="lp-anchor">Features</a>
+      <a href="#built" class="lp-anchor">Built with</a>
+      <button class="lp-btn lp-btn-primary" onclick="lpScrollTo('#begin')">Begin</button>
+    </div>
+  </nav>
+
+  <div class="lp-wrap" id="top">
+
+    <!-- Hero -->
+    <header class="lp-hero">
+      <span class="lp-eyebrow reveal"><span class="dot"></span>Agentic sleep companion · Gemini 3 + MongoDB</span>
+      <h1 class="lp-h1" id="lp-h1" data-split>Your sleep, <span class="ital">on a mission.</span></h1>
+      <p class="lp-sub reveal">Meet Nova — an agent that reads your sleep history, composes one continuous soundscape that never cuts out before morning, and learns what actually works. You stay in control.</p>
+      <div class="lp-cta-row reveal">
+        <button class="lp-btn lp-btn-primary" id="lp-hero-cta" onclick="lpStart()">Start sleeping smarter</button>
+        <button class="lp-btn lp-btn-ghost" onclick="lpScrollTo('#mission')">See how it works</button>
+        <span class="lp-cta-note">Free · Google or email sign-in</span>
+      </div>
+      <div class="lp-scrollcue" aria-hidden="true"><span class="bar"></span>Scroll</div>
+    </header>
+
+    <!-- Problem -->
+    <section class="lp-band" id="problem">
+      <div class="lp-kicker reveal">The problem</div>
+      <h2 class="lp-h2 reveal">Good sleep is hard-won — hardest for people who need it most.</h2>
+      <p class="lp-lead reveal">Shift workers, emergency-services staff, light sleepers and insomniacs don't need another static library of sounds and a journal to fill in. They need something that does the thinking: reasons over what worked, acts on a plan, and keeps the night unbroken. That's the job sl33p-space takes off your hands.</p>
+      <div class="lp-personas reveal">
+        <span class="lp-persona"><b>Shift workers</b></span>
+        <span class="lp-persona"><b>Emergency services</b></span>
+        <span class="lp-persona"><b>Light sleepers</b></span>
+        <span class="lp-persona"><b>Insomniacs</b></span>
+        <span class="lp-persona">…and their <b>families</b></span>
+      </div>
+    </section>
+
+    <!-- Mission -->
+    <section class="lp-band" id="mission">
+      <div class="lp-kicker reveal">The nightly mission</div>
+      <h2 class="lp-h2 reveal">Watch the agent work — then approve.</h2>
+      <p class="lp-lead reveal">Every evening, before you say a word, Nova plans and runs a six-step mission grounded entirely in your own data. Nothing is a black box; every step is visible, and the last one is yours.</p>
+
+      <div class="lp-mission" id="lp-mission">
+        <div class="lp-mline" id="lp-mline"></div>
+        <div class="lp-step reveal"><div class="lp-step-dot">1</div><div><h3>Analyses your history</h3><p>Aggregates your sessions in MongoDB — recent nights, mood × track matrix, lifestyle-factor correlations.</p></div></div>
+        <div class="lp-step mcp reveal"><div class="lp-step-dot">2</div><div><h3>Verifies in the live database <span class="lp-mcp-badge">MCP</span></h3><p>Runs a real query through the MongoDB MCP server to confirm the pick against your actual ratings — the query is shown, not hidden.</p></div></div>
+        <div class="lp-step reveal"><div class="lp-step-dot">3</div><div><h3>Chooses tonight's soundscape</h3><p>Selects the track most likely to work for your mood and persona, citing the numbers behind it.</p></div></div>
+        <div class="lp-step reveal"><div class="lp-step-dot">4</div><div><h3>Composes one continuous arc</h3><p>Stitches settling → transition → deep sleep into a single source that loops at the OS layer — so it never goes silent at 3am.</p></div></div>
+        <div class="lp-step reveal"><div class="lp-step-dot">5</div><div><h3>Predicts the outcome</h3><p>Estimates how you'll rate the night, with a confidence score that reflects how much data it's standing on.</p></div></div>
+        <div class="lp-step reveal"><div class="lp-step-dot">6</div><div><h3>Hands you the controls</h3><p>Approve and start, swap the track, or regenerate. The next morning it reviews the result and adapts.</p></div></div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="lp-band" id="features">
+      <div class="lp-kicker reveal">What's inside</div>
+      <h2 class="lp-h2 reveal">An agent, not a playlist.</h2>
+      <div class="lp-grid">
+        <div class="lp-feat green reveal">
+          <div class="lp-feat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v18M5 8v8M19 8v8M8.5 6v12M15.5 6v12"/></svg></div>
+          <h3>Unbroken overnight audio</h3>
+          <p>One continuous, infinitely-looping soundscape. No JavaScript advancing tracks, so a locked phone never goes quiet before morning.</p>
+        </div>
+        <div class="lp-feat green reveal">
+          <div class="lp-feat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
+          <h3>Load-bearing MongoDB MCP</h3>
+          <p>The agent reasons over the live database through the MongoDB MCP server — and shows you the actual query it ran.</p>
+        </div>
+        <div class="lp-feat reveal">
+          <div class="lp-feat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+          <h3>Nova, a coach with memory</h3>
+          <p>A consistent companion that remembers what worked across nights and greets you with where you actually are.</p>
+        </div>
+        <div class="lp-feat reveal">
+          <div class="lp-feat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+          <h3>Multi-night experiments</h3>
+          <p>Spots a lever in your data — "caffeine costs you a star" — runs a 3-night test, measures it, and reports the verdict.</p>
+        </div>
+        <div class="lp-feat reveal">
+          <div class="lp-feat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+          <h3>Soundscapes by Lyria</h3>
+          <p>Unique, AI-generated ambient tracks — an explicit choice you make, never an autonomous money pit.</p>
+        </div>
+        <div class="lp-feat reveal">
+          <div class="lp-feat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></div>
+          <h3>Insights that build</h3>
+          <p>Trends, factor correlations, streaks and a sleep journal — the substrate the agent reasons over, visualised for you.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Built with / stats -->
+    <section class="lp-tech" id="built">
+      <div class="lp-band">
+        <div class="lp-kicker reveal">Built with</div>
+        <h2 class="lp-h2 reveal">Grounded in your data — not generic advice.</h2>
+        <p class="lp-lead reveal">The track choice is deterministic from your history; the model handles the language. Every recommendation cites a real number, verified against the live database.</p>
+        <div class="lp-stats">
+          <div class="lp-stat reveal"><div class="n" data-count="7">7</div><div class="l">MongoDB collections</div></div>
+          <div class="lp-stat reveal"><div class="n" data-count="12">12</div><div class="l">agent tools</div></div>
+          <div class="lp-stat reveal"><div class="n" data-count="6">6</div><div class="l">mission steps</div></div>
+          <div class="lp-stat reveal"><div class="n" data-count="0" data-suffix="∞">∞</div><div class="l">overnight loop</div></div>
+        </div>
+        <div class="lp-stack reveal">
+          <span class="lp-chip">Gemini 3 Flash</span>
+          <span class="lp-chip">Google ADK</span>
+          <span class="lp-chip mongo">MongoDB Atlas + MCP</span>
+          <span class="lp-chip">Lyria 3 Pro</span>
+          <span class="lp-chip">Cloud Run</span>
+          <span class="lp-chip">Firebase Auth</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Begin / auth -->
+    <section class="lp-begin" id="begin">
+      <div class="reveal">
+        <div class="lp-kicker">Begin</div>
+        <h2 class="lp-h2">Hand tonight to the agent.</h2>
+        <p class="lp-lead">Sign in and Nova will have a plan waiting the next time you open the app — grounded in your nights, ready for your nod.</p>
+      </div>
+
+      <div class="lp-authcard reveal" id="auth-buttons-wrap">
+        <h3>Get started</h3>
+        <p class="s">Free. Your data stays yours.</p>
+
+        <div id="auth-buttons">
+          <button class="lp-google" onclick="signInWithGoogle()">
+            <svg viewBox="0 0 24 24" class="w-[18px] h-[18px]" width="18" height="18" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+            Continue with Google
+          </button>
+          <div class="lp-divider">or</div>
+          <button class="lp-ghostbtn" onclick="showEmailAuth('signin')">Continue with email</button>
+        </div>
+
+        <div id="auth-email-form" class="hidden">
+          <form onsubmit="handleEmailAuth(event)" style="display:flex;flex-direction:column;gap:.8rem;text-align:left">
+            <div id="auth-name-field" class="hidden">
+              <label class="lp-input-label">Display name</label>
+              <input type="text" id="auth-name" placeholder="Your name (optional)" autocomplete="name" class="lp-input">
+            </div>
+            <div>
+              <label class="lp-input-label">Email</label>
+              <input type="email" id="auth-email" required placeholder="you@example.com" autocomplete="email" class="lp-input">
+            </div>
+            <div>
+              <label class="lp-input-label">Password</label>
+              <input type="password" id="auth-password" required minlength="6" placeholder="Min. 6 characters" autocomplete="current-password" class="lp-input">
+            </div>
+            <div id="auth-confirm-field" class="hidden">
+              <label class="lp-input-label">Confirm password</label>
+              <input type="password" id="auth-password-confirm" minlength="6" placeholder="Repeat password" autocomplete="new-password" class="lp-input">
+            </div>
+            <div id="auth-error" style="display:none;font-size:.75rem;color:#ff9a9a"></div>
+            <button type="submit" id="auth-submit-btn" class="lp-google" style="background:linear-gradient(180deg,#efeafc,var(--violet-2))">Sign In</button>
+            <div style="display:flex;justify-content:space-between;font-size:.74rem">
+              <button type="button" id="auth-forgot" class="lp-textbtn" style="background:none;border:0;color:var(--ink-faint);cursor:pointer" onclick="resetPassword(document.getElementById('auth-email').value)">Forgot password?</button>
+              <button type="button" id="auth-toggle" style="background:none;border:0;color:var(--violet-2);cursor:pointer" onclick="toggleAuthMode()">Create account</button>
+            </div>
+          </form>
+          <button class="lp-textbtn" style="margin-top:1rem;background:none;border:0;color:var(--ink-faint);cursor:pointer;font-size:.74rem" onclick="showAuthButtons()">&larr; Back to all options</button>
+        </div>
+
+        <div id="referral-note" class="hidden" style="margin-top:1rem;padding:.6rem .9rem;border-radius:10px;background:rgba(139,109,255,0.1);border:1px solid rgba(139,109,255,0.25);font-size:.76rem;color:var(--violet-2)">
+          You've been invited — sign in to claim your bonus credit.
+        </div>
+        <p class="lp-fineprint">By signing in you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>
+      </div>
+    </section>
+
+    <footer class="lp-foot">
+      <span>sl33p·space — built for the Building Agents for Real-World Challenges hackathon · MongoDB track</span>
+      <span class="links">
+        <a href="/about">About</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="https://github.com/pixjobs/sl33p-space" target="_blank" rel="noopener">GitHub</a>
+      </span>
+    </footer>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" integrity="sha384-g4NTh/Iv5PPU4xPyhEWqPcwtNXOvdaDI8LLnyYfyNZOjKJeYQyjzQ9X5275eBjpt" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" integrity="sha384-Z3REaz79l2IaAZqJsSABtTbhjgOUYyV3p90XNnAPCSHg3EMTz1fouunq9WZRtj3d" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
+/* ── Referral capture + sign-out cleanup (preserved) ── */
 (function() {
   var params = new URLSearchParams(window.location.search);
   if (params.has('signed_out')) {
@@ -143,8 +457,13 @@
   }
 })();
 
+/* ── Auth UI helpers (preserved from original welcome) ── */
 var _authMode = 'signin';
-
+function lpStart() { lpScrollTo('#begin'); }
+function lpScrollTo(sel) {
+  var el = document.querySelector(sel);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 function showEmailAuth(mode) {
   document.getElementById('auth-buttons').classList.add('hidden');
   document.getElementById('auth-email-form').classList.remove('hidden');
@@ -152,21 +471,18 @@ function showEmailAuth(mode) {
   _updateAuthForm();
   document.getElementById('auth-email').focus();
 }
-
 function showAuthButtons() {
   document.getElementById('auth-email-form').classList.add('hidden');
   document.getElementById('auth-buttons').classList.remove('hidden');
   var errEl = document.getElementById('auth-error');
-  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; errEl.style.color = ''; }
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
 }
-
 function toggleAuthMode() {
   _authMode = _authMode === 'signin' ? 'signup' : 'signin';
   _updateAuthForm();
   var errEl = document.getElementById('auth-error');
-  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; errEl.style.color = ''; }
+  if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
 }
-
 function _updateAuthForm() {
   var nameField = document.getElementById('auth-name-field');
   var confirmField = document.getElementById('auth-confirm-field');
@@ -174,7 +490,6 @@ function _updateAuthForm() {
   var toggleBtn = document.getElementById('auth-toggle');
   var forgotBtn = document.getElementById('auth-forgot');
   var pwInput = document.getElementById('auth-password');
-
   if (_authMode === 'signup') {
     nameField.classList.remove('hidden');
     confirmField.classList.remove('hidden');
@@ -191,17 +506,15 @@ function _updateAuthForm() {
     pwInput.autocomplete = 'current-password';
   }
 }
-
 function handleEmailAuth(e) {
   e.preventDefault();
   var email = document.getElementById('auth-email').value.trim();
   var password = document.getElementById('auth-password').value;
-
   if (_authMode === 'signup') {
     var confirm = document.getElementById('auth-password-confirm').value;
     if (password !== confirm) {
       var errEl = document.getElementById('auth-error');
-      if (errEl) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = ''; errEl.style.color = ''; }
+      if (errEl) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = ''; }
       return;
     }
     var name = document.getElementById('auth-name').value.trim();
@@ -211,15 +524,148 @@ function handleEmailAuth(e) {
   }
 }
 
-function shareSiteWelcome() {
-  var url = window.location.origin;
-  if (navigator.share) {
-    navigator.share({ title: 'sl33p-space', text: 'Check out sl33p-space — AI sleep soundscapes', url: url });
-  } else {
-    navigator.clipboard.writeText(url).then(function() {
-      showToast('Link copied!', 'success');
-    });
+/* ── Atmosphere: scatter stars ── */
+(function buildStars() {
+  var host = document.getElementById('lp-stars');
+  if (!host) return;
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < 90; i++) {
+    var s = document.createElement('span');
+    var sz = Math.random() < 0.85 ? 1 : 2;
+    s.style.width = s.style.height = sz + 'px';
+    s.style.left = (Math.random() * 100) + '%';
+    s.style.top = (Math.random() * 100) + '%';
+    s.style.setProperty('--d', (4 + Math.random() * 7).toFixed(1) + 's');
+    s.style.animationDelay = (-Math.random() * 7).toFixed(1) + 's';
+    frag.appendChild(s);
   }
-}
+  host.appendChild(frag);
+})();
+
+/* ── Split the hero headline into animatable words (keep the gradient span) ── */
+(function splitHero() {
+  var h1 = document.getElementById('lp-h1');
+  if (!h1) return;
+  // Wrap top-level text nodes word-by-word; leave element children (.ital) intact.
+  var nodes = Array.prototype.slice.call(h1.childNodes);
+  h1.textContent = '';
+  nodes.forEach(function(node) {
+    if (node.nodeType === 3) {
+      node.textContent.split(/(\s+)/).forEach(function(tok) {
+        if (tok.trim() === '') { h1.appendChild(document.createTextNode(tok)); return; }
+        var w = document.createElement('span'); w.className = 'word'; w.textContent = tok;
+        h1.appendChild(w);
+      });
+    } else {
+      node.classList.add('word');
+      h1.appendChild(node);
+    }
+  });
+})();
+
+/* ── Nav state on scroll + scroll progress ── */
+(function navAndProgress() {
+  var nav = document.getElementById('lp-nav');
+  var bar = document.getElementById('lp-progress');
+  function onScroll() {
+    var y = window.scrollY || 0;
+    if (nav) nav.classList.toggle('scrolled', y > 30);
+    if (bar) {
+      var h = document.documentElement.scrollHeight - window.innerHeight;
+      bar.style.width = (h > 0 ? (y / h) * 100 : 0) + '%';
+    }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+
+/* ── Magnetic primary CTA ── */
+(function magnetic() {
+  var btn = document.getElementById('lp-hero-cta');
+  if (!btn || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  btn.addEventListener('mousemove', function(e) {
+    var r = btn.getBoundingClientRect();
+    btn.style.transform = 'translate(' + ((e.clientX - r.left - r.width/2) * 0.25) + 'px,' +
+      ((e.clientY - r.top - r.height/2) * 0.35) + 'px)';
+  });
+  btn.addEventListener('mouseleave', function() { btn.style.transform = ''; });
+})();
+
+/* ── GSAP choreography ── */
+(function animate() {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce || typeof gsap === 'undefined') {
+    document.querySelectorAll('.reveal').forEach(function(el){ el.classList.add('revealed'); });
+    return;
+  }
+  gsap.registerPlugin(ScrollTrigger);
+
+  // Hero elements use .reveal (CSS hides them); mark them visible first so
+  // gsap.from() animates *into* their natural state rather than back to hidden.
+  document.querySelectorAll('.lp-hero .reveal').forEach(function(el){ el.classList.add('revealed'); });
+
+  // Hero load timeline
+  gsap.timeline({ defaults: { ease: 'power3.out' } })
+    .from('.lp-eyebrow', { y: 18, opacity: 0, duration: .7 })
+    .from('#lp-h1 .word', { yPercent: 110, opacity: 0, duration: 1, stagger: 0.08 }, '-=0.3')
+    .from('.lp-sub', { y: 22, opacity: 0, duration: .8 }, '-=0.5')
+    .from('.lp-cta-row', { y: 22, opacity: 0, duration: .8 }, '-=0.6')
+    .from('.lp-moon', { scale: .8, opacity: 0, duration: 1.6, ease: 'power2.out' }, '-=1.2')
+    .from('.lp-scrollcue', { opacity: 0, duration: .6 }, '-=0.4');
+
+  // Parallax: moon + aurora drift with scroll
+  gsap.to('#lp-moon', { yPercent: 40, ease: 'none',
+    scrollTrigger: { trigger: '#lp', start: 'top top', end: 'bottom top', scrub: true } });
+  gsap.to('#lp-aurora', { yPercent: 18, ease: 'none',
+    scrollTrigger: { trigger: '#lp', start: 'top top', end: 'bottom top', scrub: 0.6 } });
+
+  // Generic scroll reveals
+  gsap.utils.toArray('.reveal').forEach(function(el) {
+    if (el.closest('.lp-hero')) return; // handled by hero timeline
+    gsap.fromTo(el, { y: 30, opacity: 0 }, {
+      y: 0, opacity: 1, duration: .9, ease: 'power3.out',
+      scrollTrigger: { trigger: el, start: 'top 86%', once: true },
+      onStart: function(){ el.classList.add('revealed'); }
+    });
+  });
+
+  // Mission line "draws" + steps pop
+  var mline = document.getElementById('lp-mline');
+  if (mline) {
+    gsap.to(mline, { scaleY: 1, ease: 'none',
+      scrollTrigger: { trigger: '#lp-mission', start: 'top 70%', end: 'bottom 70%', scrub: true } });
+  }
+  gsap.utils.toArray('#lp-mission .lp-step').forEach(function(step, i) {
+    gsap.from(step.querySelector('.lp-step-dot'), {
+      scale: 0, opacity: 0, duration: .5, ease: 'back.out(2)',
+      scrollTrigger: { trigger: step, start: 'top 82%', once: true }
+    });
+  });
+
+  // Count-up stats
+  gsap.utils.toArray('.lp-stat .n').forEach(function(node) {
+    var target = parseFloat(node.getAttribute('data-count')) || 0;
+    var suffix = node.getAttribute('data-suffix');
+    if (suffix) return; // ∞ etc. — leave as-is
+    var obj = { v: 0 };
+    ScrollTrigger.create({
+      trigger: node, start: 'top 88%', once: true,
+      onEnter: function() {
+        gsap.to(obj, { v: target, duration: 1.4, ease: 'power2.out',
+          onUpdate: function() { node.textContent = Math.round(obj.v); } });
+      }
+    });
+  });
+})();
+
+/* Failsafe: if anything above throws, never leave content hidden */
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    document.querySelectorAll('.reveal:not(.revealed)').forEach(function(el) {
+      var r = el.getBoundingClientRect();
+      if (r.top < window.innerHeight) el.classList.add('revealed');
+    });
+  }, 2500);
+});
 </script>
 {% endblock %}
