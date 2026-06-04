@@ -16,13 +16,26 @@
 /* ───── Clock ───── */
 .sleep-clock {
   font-size: 5rem;
-  font-weight: 200;
+  font-weight: 300;
   letter-spacing: 6px;
   color: rgba(255, 245, 230, 0.9);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 60px rgba(255, 183, 77, 0.1);
-  font-family: 'Inter', monospace;
+  text-shadow: 0 0 60px rgba(255, 183, 77, 0.12);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
   margin-bottom: 0.5rem;
+}
+
+/* ───── Deep-night serene mode (idle → dim, calmer, kinder to sleep + battery) ───── */
+.sleep-display { transition: opacity 1.6s ease, filter 1.6s ease; }
+.immersive.deep-night .sleep-display { opacity: 0.42; filter: brightness(0.78); transition: opacity 3.5s ease, filter 3.5s ease; }
+.immersive.deep-night .sleep-clock { opacity: 0.82; }
+.immersive.deep-night .viz-container { opacity: 0.55; }
+.immersive.deep-night .sleep-telemetry,
+.immersive.deep-night .status-readout,
+.immersive.deep-night .soundscape-info { opacity: 0.5; }
+.breath-text { transition: opacity 0.7s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .sleep-display, .immersive.deep-night .sleep-display { transition: opacity 0.4s ease; }
 }
 
 .sleep-clock-label {
@@ -1185,13 +1198,18 @@ function connectAudioAnalyser() {
 function startVisualiser() {
   initVisualiser();
   if (_viz.animId) return;
-  var lastTime = 0;
 
   function draw(timestamp) {
     _viz.animId = requestAnimationFrame(draw);
-    var dt = (timestamp - lastTime) / 1000;
-    lastTime = timestamp;
-    if (dt > 0.1) dt = 0.016;
+    // Frame-rate cap: this is a slow breathing animation, so 30fps is plenty —
+    // and capping roughly halves GPU work across an 8-hour session. In deep-night
+    // we drop to ~12fps to save even more battery while the user is asleep.
+    var fps = _viz.deep ? 12 : 30;
+    var since = timestamp - (_viz._lastDraw || 0);
+    if (since < 1000 / fps - 1) return;
+    var dt = _viz._lastDraw ? since / 1000 : 0.016;
+    _viz._lastDraw = timestamp;
+    if (dt > 0.1) dt = 0.05;
 
     var ctx = _viz.ctx;
     var w = _viz.w;
@@ -1445,6 +1463,7 @@ function showControls() {
   var controls = document.getElementById('sleep-controls');
   if (controls) controls.classList.remove('hidden');
   _imm.controlsVisible = true;
+  exitDeepNight();
   resetHideTimer();
 }
 
@@ -1454,9 +1473,24 @@ function hideControls() {
   _imm.controlsVisible = false;
 }
 
+// Deep-night: after a longer idle, dim to a serene low-light state that's
+// kinder to sleep, screen burn-in, and battery. Any interaction restores it.
+function enterDeepNight() {
+  var imm = document.getElementById('immersive');
+  if (imm) imm.classList.add('deep-night');
+  _viz.deep = true;
+}
+function exitDeepNight() {
+  var imm = document.getElementById('immersive');
+  if (imm && imm.classList.contains('deep-night')) imm.classList.remove('deep-night');
+  _viz.deep = false;
+}
+
 function resetHideTimer() {
   if (_imm.hideTimeout) clearTimeout(_imm.hideTimeout);
+  if (_imm.deepTimeout) clearTimeout(_imm.deepTimeout);
   _imm.hideTimeout = setTimeout(hideControls, 5000);
+  _imm.deepTimeout = setTimeout(enterDeepNight, 75000);
 }
 
 // ───── Wake Lock (prevent screen dimming) ─────
@@ -1574,10 +1608,28 @@ function _restorePlaybackState() {
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" integrity="sha384-g4NTh/Iv5PPU4xPyhEWqPcwtNXOvdaDI8LLnyYfyNZOjKJeYQyjzQ9X5275eBjpt" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 // Runs after app.js is loaded — api() is available here
 startBreathing();
 loadApodBackground();
+
+// Cinematic entrance — the cosmos settles in and the display rises into place.
+// Uses gsap.from() so a missing/blocked GSAP simply leaves everything visible.
+function _sleepEntrance() {
+  if (typeof gsap === 'undefined') return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var bg = document.getElementById('imm-bg');
+  if (bg) gsap.from(bg, { opacity: 0, scale: 1.06, duration: 2.4, ease: 'power2.out' });
+  gsap.from('.sleep-clock', { opacity: 0, y: 24, filter: 'blur(8px)', duration: 1.4, ease: 'power3.out', delay: 0.25 });
+  gsap.from(['.soundscape-info', '.sleep-telemetry', '.status-readout', '.viz-container', '.session-start'], {
+    opacity: 0, y: 18, duration: 1.1, stagger: 0.14, ease: 'power3.out', delay: 0.6,
+    clearProps: 'transform,filter'
+  });
+  var controls = document.getElementById('sleep-controls');
+  if (controls) gsap.from(controls, { opacity: 0, y: 30, duration: 1, ease: 'power3.out', delay: 1.1 });
+}
+_sleepEntrance();
 
 // Fast paint from sessionStorage (instant), then reconcile against the server.
 var _restored = _restorePlaybackState();
