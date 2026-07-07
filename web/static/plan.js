@@ -8,6 +8,7 @@ function switchTab(name) {
 }
 
 var _plan = { mood: null, track: null, trackManual: false };
+var _tonightTrack = { title: null, id: null, src: null, source: 'none' };
 var _trackingLevel = document.body.dataset.trackingLevel || 'basic';
 
 // ───── Persona ─────
@@ -241,9 +242,10 @@ function _sortTracksByMood(mood) {
     }
   });
 
-  if (chips.length > 0 && !_plan.trackManual) {
+  if (chips.length > 0 && (_tonightTrack.source !== 'manual' && _tonightTrack.source !== 'agent' && _tonightTrack.source !== 'swap' && _tonightTrack.source !== 'lab')) {
     document.querySelectorAll('.track-chip').forEach(function(c) { c.classList.remove('active'); });
-    _plan.track = { id: chips[0].dataset.id, src: chips[0].dataset.src, title: chips[0].dataset.title };
+    _tonightTrack = { id: chips[0].dataset.id, src: chips[0].dataset.src, title: chips[0].dataset.title, source: 'mood' };
+    _plan.track = _tonightTrack;
     chips[0].classList.add('active');
     _updateTrackIndicator(_plan.track.title);
   }
@@ -252,7 +254,8 @@ function _sortTracksByMood(mood) {
 function pickTrack(chip) {
   document.querySelectorAll('.track-chip').forEach(function(c) { c.classList.remove('active'); });
   chip.classList.add('active');
-  _plan.track = { id: chip.dataset.id, src: chip.dataset.src, title: chip.dataset.title };
+  _tonightTrack = { id: chip.dataset.id, src: chip.dataset.src, title: chip.dataset.title, source: 'manual' };
+  _plan.track = _tonightTrack;
   _plan.trackManual = true;
 
   var preview = document.getElementById('track-preview');
@@ -272,6 +275,68 @@ function pickTrack(chip) {
 function _updateTrackIndicator(title) {
   var el = document.getElementById('track-indicator-title');
   if (el) el.textContent = title;
+}
+
+async function _refreshTrackList() {
+  try {
+    var tracks = await api('/api/music/library');
+    if (!Array.isArray(tracks)) return;
+    var strip = document.getElementById('track-strip');
+    if (!strip) return;
+    
+    var uid = window._userId || '';
+    
+    strip.innerHTML = tracks.map(function(t) {
+      var trackId = t.id || t.track_id;
+      var filename = t.filename || '';
+      var src = t.src || ('/media/music/' + filename);
+      var title = t.title || t.track_title || 'Untitled';
+      var moodTags = Array.isArray(t.mood_tags) ? t.mood_tags : [];
+      var energy = t.energy_level || 'low';
+      var owner = (t.generated_by === uid) ? 'mine' : 'public';
+      var visibility = t.visibility || 'private';
+      
+      var isOwner = (t.generated_by === uid);
+      var ownerSpan = isOwner ? '<span class="text-[0.5rem] text-violet-400/50 ml-auto">yours</span>' : '';
+      
+      var visBtnClass = (visibility === 'published') 
+        ? 'border-emerald-500/30 text-emerald-400/60 bg-emerald-500/5' 
+        : 'border-white/10 text-white/25 bg-transparent';
+      var visBtnText = (visibility === 'published') ? 'Public' : 'Private';
+      var visBtnTitle = (visibility === 'published') ? 'Unpublish' : 'Publish';
+      
+      var visBtn = isOwner 
+        ? '<button class="vis-toggle text-[0.45rem] ml-1 px-1.5 py-0.5 rounded-full border cursor-pointer transition-all ' + visBtnClass + '" data-track-id="' + trackId + '" onclick="event.stopPropagation(); toggleTrackVisibility(this)" title="' + visBtnTitle + '">' + visBtnText + '</button>' 
+        : '';
+        
+      var tagsText = moodTags.length > 0 
+        ? '<span class="block text-[0.5rem] text-white/20 mt-0.5 truncate">' + moodTags.join(' · ') + '</span>' 
+        : '';
+        
+      return '<button class="track-chip px-3 py-2.5 bg-transparent border border-border rounded-xl cursor-pointer transition-all text-left hover:border-border-hover hover:bg-surface-hover group" ' +
+             'data-id="' + trackId + '" ' +
+             'data-src="' + src + '" ' +
+             'data-title="' + title + '" ' +
+             'data-mood-tags="' + moodTags.join(',') + '" ' +
+             'data-energy="' + energy + '" ' +
+             'data-owner="' + owner + '" ' +
+             'data-visibility="' + visibility + '" ' +
+             'onclick="pickTrack(this)">' +
+             '<div class="flex items-center gap-1.5 mb-0.5">' +
+             '<span class="energy-dot e-' + energy + '"></span>' +
+             '<span class="text-[0.55rem] text-white/25 uppercase tracking-wider">' + energy + '</span>' +
+             ownerSpan +
+             visBtn +
+             '</div>' +
+             '<span class="block text-[0.75rem] font-medium text-white/80 group-hover:text-white truncate">' + title + '</span>' +
+             tagsText +
+             '</button>';
+    }).join('');
+    
+    if (_plan.mood) _sortTracksByMood(_plan.mood);
+  } catch (e) {
+    console.error('Error refreshing track list:', e);
+  }
 }
 
 function changeTrack() {
@@ -328,18 +393,11 @@ function setPreviewVol(val) {
 
 
 // Select the MongoDB-recommended mood once the plan card is present.
-(function() {
-  var card = document.getElementById('plan-card');
-  if (!card) return;
-  var mood = card.dataset.recommendedMood || 'calm';
-  var btn = document.querySelector('.mood-btn[data-mood="' + mood + '"]') || document.querySelector('.mood-btn[data-mood="calm"]');
-  if (btn) pickMood(btn);
-})();
-
 // ───── Start sleep ─────
 function _resolveTrack() {
-  // Prefer the explicit track set by pickTrack() / useAgentPlan()
-  if (_plan.track && _plan.track.id) return _plan.track;
+  if (_tonightTrack.source === 'manual' || _tonightTrack.source === 'agent' || _tonightTrack.source === 'swap' || _tonightTrack.source === 'lab') {
+    if (_tonightTrack.id || _tonightTrack.src) return _tonightTrack;
+  }
   // Fall back to the visually-selected chip (marked with .active class)
   var chips = document.querySelectorAll('.track-chip');
   for (var i = 0; i < chips.length; i++) {
@@ -565,7 +623,7 @@ async function submitReview(sid, rating) {
 
 async function skipReview(sid) {
   try {
-    await api('/api/sleep/delete', 'POST', { session_id: sid });
+    await api('/api/sleep/review', 'POST', { session_id: sid, skip: true });
     var pill = document.getElementById('review-banner') || document.getElementById('review-pill');
     if (pill) { pill.style.opacity = '0'; setTimeout(function() { pill.remove(); }, 300); }
     // The coach strip references the pending review — refresh it so it clears.
@@ -767,6 +825,12 @@ function _renderAgentRec(data) {
   var empty = document.getElementById('agent-rec-empty');
   if (loading) loading.classList.add('hidden');
 
+  if (_tonightTrack.source === 'none') {
+    var recMood = (data && data.mood) || (document.getElementById('plan-card') || {}).dataset.recommendedMood || 'calm';
+    var btn = document.querySelector('.mood-btn[data-mood="' + recMood + '"]') || document.querySelector('.mood-btn[data-mood="calm"]');
+    if (btn) pickMood(btn);
+  }
+
   if (!data || !data.reasoning) {
     if (empty) empty.classList.remove('hidden');
     return;
@@ -868,7 +932,15 @@ function _runMcpVerify(track, mood) {
   if (first && first.nextSibling) ol.insertBefore(pending, first.nextSibling);
   else ol.appendChild(pending);
 
+  var timer = setTimeout(function() {
+    pending.textContent = 'Using deterministic data (MCP unavailable)';
+    pending.classList.add('revealed');
+    // Remove after 2s to keep the UI clean
+    setTimeout(function() { pending.remove(); }, 2000);
+  }, 12000);
+
   api('/api/agent/verify', 'POST', { track: track, mood: mood }).then(function(v) {
+    clearTimeout(timer);
     if (!v || !v.mcp_used) { pending.remove(); return; }
     var avg = v.avg_rating, cnt = v.sessions_count || 0;
     var detail = (avg != null && cnt) ? (avg + '/5 across ' + cnt + ' matching nights — confirms the pick')
@@ -880,7 +952,10 @@ function _runMcpVerify(track, mood) {
     });
     done.classList.add('revealed');
     ol.replaceChild(done, pending);
-  }).catch(function() { pending.remove(); });
+  }).catch(function() { 
+    clearTimeout(timer);
+    pending.remove(); 
+  });
 }
 
 function _renderConfidenceRing(el, confidence) {
@@ -1013,10 +1088,14 @@ function _applyAgentTrack() {
   for (var i = 0; i < chips.length; i++) {
     if (chips[i].dataset.title === _agentRec.soundscape_title) {
       pickTrack(chips[i]);
+      _tonightTrack = { title: _agentRec.soundscape_title, id: chips[i].dataset.id, src: chips[i].dataset.src, source: 'agent' };
+      _plan.track = _tonightTrack;
       _updateTrackIndicator(_agentRec.soundscape_title);
       return true;
     }
   }
+  _tonightTrack = { title: _agentRec.soundscape_title, id: null, src: null, source: 'agent' };
+  _plan.track = _tonightTrack;
   _updateTrackIndicator(_agentRec.soundscape_title);
   return true;
 }
@@ -1040,6 +1119,8 @@ function swapAgentTrack() {
   var idx = opts.indexOf(cur);
   var next = opts[(idx + 1) % opts.length];
   _agentRec.soundscape_title = next;
+  _tonightTrack = { title: next, source: 'swap', id: null, src: null };  // ← mark as swapped
+  _plan.track = _tonightTrack;
   _applyAgentTrack();
   // Update the mission's "chose" step detail in place.
   var steps = document.querySelectorAll('#agent-mission .mission-step .mission-detail');
@@ -1347,12 +1428,20 @@ function labUseTonight() {
   var resultAudio = document.getElementById('lab-result-audio');
   if (resultAudio && resultAudio.src) {
     var title = (document.getElementById('lab-result-title') || {}).textContent || '';
+    var found = false;
     var chips = document.querySelectorAll('.track-chip');
     for (var i = 0; i < chips.length; i++) {
       if (chips[i].dataset.title === title) {
         pickTrack(chips[i]);
+        _tonightTrack.source = 'lab';
+        _plan.track = _tonightTrack;
+        found = true;
         break;
       }
+    }
+    if (!found) {
+      _tonightTrack = { title: title, id: null, src: resultAudio.src, source: 'lab' };
+      _plan.track = _tonightTrack;
     }
     _updateTrackIndicator(title);
     switchTab('tonight');

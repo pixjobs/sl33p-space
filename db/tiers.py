@@ -14,7 +14,7 @@ from db import get_db
 
 TIER_LIMITS = {
     "free": {"generations_per_month": 2, "chat_per_day": 10},
-    "plus": {"generations_per_month": 10, "chat_per_day": 50},
+    "plus": {"generations_per_month": 20, "chat_per_day": 50, "credits_per_month": 10},
     "tester": {"generations_per_month": 20, "chat_per_day": 50},
     "admin": {"generations_per_month": 999, "chat_per_day": 999},
 }
@@ -45,15 +45,26 @@ def get_user_tier(uid: str) -> dict:
 
     now = datetime.now(timezone.utc)
 
+    limits = TIER_LIMITS.get(tier_type, TIER_LIMITS["free"])
+
     # Reset monthly counter if month changed
     current_month = now.strftime("%Y-%m")
     if tier.get("generation_month") != current_month:
+        update_fields = {
+            "tier.generations_this_month": 0,
+            "tier.generation_month": current_month,
+        }
+        
+        # Adjust credits monthly: top up to the tier's monthly credit allotment if below it
+        credits_per_month = limits.get("credits_per_month", 0)
+        if credits_per_month > 0:
+            new_balance = max(credits.get("balance", 0), credits_per_month)
+            update_fields["credits.balance"] = new_balance
+            credits["balance"] = new_balance
+
         db.users.update_one(
             {"_id": uid},
-            {"$set": {
-                "tier.generations_this_month": 0,
-                "tier.generation_month": current_month,
-            }},
+            {"$set": update_fields},
         )
         tier["generations_this_month"] = 0
 

@@ -877,19 +877,32 @@ def build_coach_checkin(user_id: str) -> dict:
     memories = get_memories(user_id, limit=1)
 
     parts = []
-    if completed and completed.get("result"):
-        parts.append(completed["result"]["conclusion"])
-    if pending:
+
+    # 1. Active experiment progress (most actionable)
+    if active:
+        done = sum(1 for n in (active.get("nights") or []) if n.get("adhered"))
+        target = active.get("target_nights", 3)
+        parts.append(f"#{done}/{target} into the {active.get('label', 'experiment')} — stick with it tonight.")
+
+    # 2. Pending review
+    elif pending:
         title = (pending.get("plan") or {}).get("soundscape_title") or "last night"
         opener = "Morning — how did" if morning else "Before tonight, how did"
-        parts.append(f"{opener} {title} treat you? A quick rating sharpens tonight's plan.")
-    elif active:
-        done = sum(1 for n in (active.get("nights") or []) if n.get("adhered"))
-        parts.append(f"We're {done}/{active.get('target_nights', 3)} into the "
-                     f"{active.get('label')} experiment — stay with it tonight.")
+        parts.append(f"{opener} {title}? Rate to sharpen tonight's plan.")
+
+    # 3. Completed experiment result
+    elif completed and completed.get("result"):
+        conclusion = completed["result"].get("conclusion", "")
+        # Take first sentence only
+        first_sentence = conclusion.split(".")[0] if conclusion else ""
+        if first_sentence:
+            parts.append(first_sentence + ".")
+
+    # 4. Memory
     elif memories:
         parts.append(f"Last time: {memories[0]['text'].lower()}.")
 
+    # 5. Fallback
     if not parts:
         parts.append("Morning — let's see how you slept." if morning
                      else "Ready when you are — let's set you up for a good night.")

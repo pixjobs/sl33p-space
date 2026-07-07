@@ -146,5 +146,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+  var _userId = "{{ uid }}";
+</script>
 <script src="{{ url_for('static', filename='plan.js') }}"></script>
 {% endblock %}

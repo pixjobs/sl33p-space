@@ -348,7 +348,7 @@ def update_session_factors(session_id: str, factors: list,
     if user_id:
         query["user_id"] = user_id
     session = db.sleep_sessions.find_one(query)
-    if not session or session["status"] not in ("completed", "reviewed"):
+    if not session or session["status"] not in ("planned", "active", "completed", "reviewed"):
         return False
     if session.get("review") is None:
         db.sleep_sessions.update_one(
