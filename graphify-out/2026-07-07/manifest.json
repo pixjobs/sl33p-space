@@ -215,8 +215,8 @@
     "semantic_hash": ""
   },
   "web/static/plan.js": {
-    "mtime": 1783436208.5378594,
-    "ast_hash": "61979c04a1a509787e14bf60fed09419",
+    "mtime": 1783434050.1958606,
+    "ast_hash": "a28f934dac178b592fd1294d16b581f2",
     "semantic_hash": ""
   },
   "web/static/player.js": {
@@ -330,8 +330,8 @@
     "semantic_hash": ""
   },
   "web/templates/plan/_sound_lab.html": {
-    "mtime": 1783436197.4327998,
-    "ast_hash": "52ed71d948a6a8a3928c87d33e0140e4",
+    "mtime": 1779284406.6987102,
+    "ast_hash": "01ad0cae736e3b72190146b40c256873",
     "semantic_hash": ""
   },
   "web/templates/plan/_stats.html": {

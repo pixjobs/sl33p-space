@@ -1,7 +1,7 @@
 # Graph Report - sl33p-space  (2026-07-07)
 
 ## Corpus Check
-- 49 files · ~96,395 words
+- 49 files · ~96,363 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `65bc0c53`
+- Built from commit: `cf654234`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

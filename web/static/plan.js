@@ -254,7 +254,11 @@ function _sortTracksByMood(mood) {
 function pickTrack(chip) {
   document.querySelectorAll('.track-chip').forEach(function(c) { c.classList.remove('active'); });
   chip.classList.add('active');
-  _tonightTrack = { id: chip.dataset.id, src: chip.dataset.src, title: chip.dataset.title, source: 'manual' };
+  
+  var _isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  var src = (_isSafari && chip.dataset.hlsUrl) ? chip.dataset.hlsUrl : chip.dataset.src;
+  
+  _tonightTrack = { id: chip.dataset.id, src: src, title: chip.dataset.title, source: 'manual' };
   _plan.track = _tonightTrack;
   _plan.trackManual = true;
 
@@ -290,6 +294,7 @@ async function _refreshTrackList() {
       var trackId = t.id || t.track_id;
       var filename = t.filename || '';
       var src = t.src || ('/media/music/' + filename);
+      var hlsUrl = t.hls_url || '';
       var title = t.title || t.track_title || 'Untitled';
       var moodTags = Array.isArray(t.mood_tags) ? t.mood_tags : [];
       var energy = t.energy_level || 'low';
@@ -316,6 +321,7 @@ async function _refreshTrackList() {
       return '<button class="track-chip px-3 py-2.5 bg-transparent border border-border rounded-xl cursor-pointer transition-all text-left hover:border-border-hover hover:bg-surface-hover group" ' +
              'data-id="' + trackId + '" ' +
              'data-src="' + src + '" ' +
+             'data-hls-url="' + hlsUrl + '" ' +
              'data-title="' + title + '" ' +
              'data-mood-tags="' + moodTags.join(',') + '" ' +
              'data-energy="' + energy + '" ' +

@@ -20,7 +20,7 @@
     <div class="grid grid-cols-2 gap-2" id="track-strip">
       {% if tracks %}
         {% for track in tracks %}
-        <button class="track-chip px-3 py-2.5 bg-transparent border border-border rounded-xl cursor-pointer transition-all text-left hover:border-border-hover hover:bg-surface-hover group" data-id="{{ track.id }}" data-src="{{ track.src or ('/media/music/' + track.filename) }}" data-title="{{ track.title }}" data-mood-tags="{{ track.mood_tags | join(',') }}" data-energy="{{ track.energy_level or 'low' }}" data-owner="{{ 'mine' if track.generated_by == uid else 'public' }}" data-visibility="{{ track.visibility or 'public' }}" onclick="pickTrack(this)">
+        <button class="track-chip px-3 py-2.5 bg-transparent border border-border rounded-xl cursor-pointer transition-all text-left hover:border-border-hover hover:bg-surface-hover group" data-id="{{ track.id }}" data-src="{{ track.src or ('/media/music/' + track.filename) }}" data-hls-url="{{ track.hls_url or '' }}" data-title="{{ track.title }}" data-mood-tags="{{ track.mood_tags | join(',') }}" data-energy="{{ track.energy_level or 'low' }}" data-owner="{{ 'mine' if track.generated_by == uid else 'public' }}" data-visibility="{{ track.visibility or 'public' }}" onclick="pickTrack(this)">
           <div class="flex items-center gap-1.5 mb-0.5">
             <span class="energy-dot e-{{ track.energy_level or 'low' }}"></span>
             <span class="text-[0.55rem] text-white/25 uppercase tracking-wider">{{ track.energy_level or 'low' }}</span>
